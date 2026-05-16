@@ -1,0 +1,29 @@
+Manage pipelines
+
+Usage: ado pipeline [OPTIONS] <COMMAND>
+
+Commands:
+  list    List all pipelines in the project
+  run     Trigger a pipeline run
+  status  Get the status of a pipeline run
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --project <PROJECT>
+          Override the default project from config
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')

@@ -1,0 +1,48 @@
+Add a relation (parent/child/related/hyperlink) to a work item
+
+Usage: ado work-item link [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+          Work item ID (the source of the link)
+
+Options:
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --parent <PARENT>
+          Link target work item as a parent
+
+      --child <CHILD>
+          Link target work item as a child
+
+      --project <PROJECT>
+          Override the default project from config
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+      --related <RELATED>
+          Link target work item as related
+
+      --predecessor <PREDECESSOR>
+          Link target work item as predecessor
+
+      --successor <SUCCESSOR>
+          Link target work item as successor
+
+      --hyperlink <HYPERLINK>
+          Add an external hyperlink (URL)
+
+      --comment <COMMENT>
+          Optional comment for the link
+
+  -h, --help
+          Print help (see a summary with '-h')

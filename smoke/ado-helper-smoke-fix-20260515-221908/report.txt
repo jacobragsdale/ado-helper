@@ -1,0 +1,24 @@
+Focused smoke report: ado-helper-smoke-fix-20260515-221908
+
+ADO repo setup:
+- Created ADO repo ado-helper and pushed current local HEAD to refs/heads/main
+- Default ado pr list --status all now passes with count 0
+
+Retested and passed:
+- config set isolated using temporary HOME
+- wi link --output json
+- wi link-rm --output json
+- wi attach --output json
+- pr approve --output json
+- pr abandon --output json
+- pr reactivate --output json
+- pr complete --output json returns status completed
+- cargo fmt --check
+- cargo clippy --all-targets -- -D warnings
+- cargo test
+
+Notes:
+- A conflicting second PR correctly did not complete; it was abandoned, then a fresh branch from updated main passed completion
+- Disposable smoke repo leftovers: none
+- Work item search leftovers: 0
+- Kept ADO repo ado-helper as requested

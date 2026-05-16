@@ -1,0 +1,13 @@
+{
+  "value": [
+    {
+      "id": "07172dbb-fc89-40a3-bcc3-ca071dd1580f",
+      "name": "development",
+      "remoteUrl": "https://jacobragsdale@dev.azure.com/jacobragsdale/development/_git/development",
+      "defaultBranch": "refs/heads/main",
+      "webUrl": "https://dev.azure.com/jacobragsdale/development/_git/development",
+      "size": 190
+    }
+  ],
+  "count": 1
+}

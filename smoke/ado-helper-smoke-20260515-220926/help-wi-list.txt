@@ -1,0 +1,41 @@
+List work items matching filters
+
+Usage: ado work-item list [OPTIONS]
+
+Options:
+      --assigned-to <ASSIGNED_TO>
+          Filter by assigned user ("me" expands to current user)
+
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --state <STATE>
+          Filter by state (Active, New, Closed, Resolved, etc.)
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+      --type <TYPE>
+          Filter by work item type
+
+      --iteration <ITERATION>
+          Filter by iteration path
+
+      --search <TERM>
+          Free-text search on title (WIQL CONTAINS)
+
+      --search-body <TERM>
+          Free-text search on description (WIQL CONTAINS on System.Description)
+
+      --project <PROJECT>
+          Project (defaults to configured project)
+
+  -h, --help
+          Print help (see a summary with '-h')

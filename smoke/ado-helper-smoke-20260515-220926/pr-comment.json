@@ -1,0 +1,24 @@
+{
+  "id": 9,
+  "status": "active",
+  "comments": [
+    {
+      "id": 1,
+      "parentCommentId": 0,
+      "author": {
+        "displayName": "Jacob Ragsdale",
+        "uniqueName": "jacobragsdale@protonmail.com",
+        "id": "9914f7cf-b458-6698-8928-51e02a5c340f"
+      },
+      "content": "Smoke PR comment for ado-helper-smoke-20260515-220926",
+      "commentType": "text",
+      "publishedDate": "2026-05-16T03:12:54.48Z",
+      "lastUpdatedDate": "2026-05-16T03:12:54.48Z",
+      "isDeleted": false
+    }
+  ],
+  "threadContext": null,
+  "publishedDate": "2026-05-16T03:12:54.48Z",
+  "lastUpdatedDate": "2026-05-16T03:12:54.48Z",
+  "isDeleted": false
+}

@@ -1,0 +1,23 @@
+Set configuration values
+
+Usage: ado config set [OPTIONS]
+
+Options:
+      --org <ORG>
+          Azure DevOps organization URL (e.g. https://dev.azure.com/myorg)
+
+      --project <PROJECT>
+          Default project name
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')

@@ -1,0 +1,1 @@
+config-set isolation failed: XDG_CONFIG_HOME ignored on macOS; restored real config file to original absent state

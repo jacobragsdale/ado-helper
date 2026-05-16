@@ -1,0 +1,35 @@
+Trigger a pipeline run
+
+Usage: ado pipeline run [OPTIONS] <PIPELINE>
+
+Arguments:
+  <PIPELINE>
+          Pipeline name or numeric ID
+
+Options:
+      --branch <BRANCH>
+          Branch to run the pipeline on
+          
+          [default: main]
+
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --var <KEY=VALUE>
+          Pipeline variables in key=value format (repeatable)
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+      --project <PROJECT>
+          Project (defaults to configured project)
+
+  -h, --help
+          Print help (see a summary with '-h')

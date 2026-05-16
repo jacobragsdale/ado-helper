@@ -1,0 +1,33 @@
+Upload a file and attach it to a work item
+
+Usage: ado work-item attach [OPTIONS] <ID> <FILE>
+
+Arguments:
+  <ID>
+          Work item ID
+
+  <FILE>
+          File path to upload
+
+Options:
+      --comment <COMMENT>
+          Optional comment shown with the attachment
+
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --project <PROJECT>
+          Override the default project from config
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')

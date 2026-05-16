@@ -23,7 +23,12 @@ impl AdoClient {
         }
         let org = org.trim_end_matches('/').to_string();
         let http = Client::builder().use_rustls_tls().build()?;
-        Ok(Self { http, org, project, pat })
+        Ok(Self {
+            http,
+            org,
+            project,
+            pat,
+        })
     }
 
     fn url(&self, path: &str) -> String {
@@ -81,7 +86,9 @@ impl AdoClient {
     pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let resp = self.get(path).send().await.context("GET request failed")?;
         let resp = Self::check_response(resp).await?;
-        resp.json::<T>().await.context("failed to parse JSON response")
+        resp.json::<T>()
+            .await
+            .context("failed to parse JSON response")
     }
 
     pub async fn post_json<B: serde::Serialize, T: DeserializeOwned>(
@@ -97,7 +104,28 @@ impl AdoClient {
             .await
             .context("POST request failed")?;
         let resp = Self::check_response(resp).await?;
-        resp.json::<T>().await.context("failed to parse JSON response")
+        resp.json::<T>()
+            .await
+            .context("failed to parse JSON response")
+    }
+
+    /// PATCH with a regular JSON body.
+    pub async fn patch_json<B: serde::Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let resp = self
+            .patch(path)
+            .header("Content-Type", "application/json")
+            .json(body)
+            .send()
+            .await
+            .context("PATCH request failed")?;
+        let resp = Self::check_response(resp).await?;
+        resp.json::<T>()
+            .await
+            .context("failed to parse JSON response")
     }
 
     /// PATCH with a JSON Patch body — required content-type for work item updates.
@@ -114,12 +142,18 @@ impl AdoClient {
             .await
             .context("PATCH request failed")?;
         let resp = Self::check_response(resp).await?;
-        resp.json::<T>().await.context("failed to parse JSON response")
+        resp.json::<T>()
+            .await
+            .context("failed to parse JSON response")
     }
 
     /// DELETE that doesn't expect a JSON body in response.
     pub async fn delete_no_body(&self, path: &str) -> Result<()> {
-        let resp = self.delete(path).send().await.context("DELETE request failed")?;
+        let resp = self
+            .delete(path)
+            .send()
+            .await
+            .context("DELETE request failed")?;
         Self::check_response(resp).await?;
         Ok(())
     }
@@ -145,4 +179,17 @@ impl AdoClient {
             .with_context(|| format!("failed to spawn {program}"))?;
         Ok(())
     }
+}
+
+/// Percent-encode a single URL path or query component using UTF-8 bytes.
+pub fn encode_path_segment(s: &str) -> String {
+    s.as_bytes()
+        .iter()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                char::from(*b).to_string()
+            }
+            b => format!("%{b:02X}"),
+        })
+        .collect()
 }

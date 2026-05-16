@@ -1,0 +1,33 @@
+Close an existing pull request comment thread
+
+Usage: ado pr thread-resolve [OPTIONS] <ID> <THREAD_ID>
+
+Arguments:
+  <ID>
+          Pull request ID
+
+  <THREAD_ID>
+          Thread ID (from `ado pr threads`)
+
+Options:
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --repo <REPO>
+          Repository name (defaults to ADO_REPO env var or origin remote)
+
+      --project <PROJECT>
+          Override the default project from config
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')

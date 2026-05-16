@@ -1,0 +1,16 @@
+{
+  "pullRequestId": 5,
+  "title": "ado-helper-smoke-fix-20260515-221908 PR third",
+  "status": "active",
+  "createdBy": {
+    "displayName": "Jacob Ragsdale",
+    "uniqueName": "jacobragsdale@protonmail.com",
+    "id": "9914f7cf-b458-6698-8928-51e02a5c340f"
+  },
+  "sourceRefName": "refs/heads/ado-helper-smoke-fix-20260515-221908-branch-third",
+  "targetRefName": "refs/heads/main",
+  "isDraft": false,
+  "mergeStatus": "queued",
+  "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/git/repositories/6c27c425-2c58-43c3-bada-2837c73f55a2/pullRequests/5",
+  "description": "Focused smoke PR completion final retry for ado-helper-smoke-fix-20260515-221908"
+}

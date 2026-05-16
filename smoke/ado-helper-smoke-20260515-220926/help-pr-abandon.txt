@@ -1,0 +1,30 @@
+Abandon a pull request (close without merging)
+
+Usage: ado pr abandon [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+          Pull request ID
+
+Options:
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --repo <REPO>
+          Repository name (defaults to ADO_REPO env var or origin remote)
+
+      --project <PROJECT>
+          Override the default project from config
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')

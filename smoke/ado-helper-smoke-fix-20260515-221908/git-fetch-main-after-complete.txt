@@ -1,0 +1,3 @@
+From https://dev.azure.com/jacobragsdale/development/_git/ado-helper-smoke-fix-20260515-221908-repo
+ * branch            main       -> FETCH_HEAD
+   9bd744a..54bdcfa  main       -> origin/main

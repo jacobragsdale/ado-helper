@@ -1,0 +1,31 @@
+Create a new Git repository in the project
+
+Usage: ado repo create [OPTIONS] --name <NAME>
+
+Options:
+      --name <NAME>
+          Name of the new repository
+
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --project <PROJECT>
+          Project to create the repo in (defaults to configured project)
+
+      --default-branch <DEFAULT_BRANCH>
+          Default branch name
+          
+          [default: main]
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::process::Command;
 
-use crate::client::AdoClient;
+use crate::client::{AdoClient, encode_path_segment};
 use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
@@ -124,7 +124,10 @@ pub async fn run(args: RepoArgs, client: &AdoClient, output: &OutputFormat) -> R
 
 async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     let project = args.project.as_deref().unwrap_or(&client.project);
-    let path = format!("{project}/_apis/git/repositories?api-version=7.1");
+    let path = format!(
+        "{project}/_apis/git/repositories?api-version=7.1",
+        project = encode_path_segment(project)
+    );
     let mut resp: RepoListResponse = client.get_json(&path).await?;
     resp.value.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -135,9 +138,8 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
                 println!("(no repos in {project})");
                 return Ok(());
             }
-            let width = resp.value.iter().map(|r| r.name.len()).max().unwrap_or(0);
-            for r in &resp.value {
-                println!("{:width$}  {}", r.name, r.remote_url, width = width);
+            for line in repo_list_lines(&resp.value) {
+                println!("{line}");
             }
         }
         OutputFormat::Table => {
@@ -145,11 +147,7 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
                 println!("(no repos in {project})");
                 return Ok(());
             }
-            let rows: Vec<Vec<String>> = resp
-                .value
-                .iter()
-                .map(|r| vec![r.name.clone(), r.remote_url.clone()])
-                .collect();
+            let rows = repo_table_rows(&resp.value);
             output::print_table(&["Name", "Remote"], &rows);
         }
     }
@@ -160,7 +158,10 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
 
 async fn create(args: CreateArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     let project = args.project.as_deref().unwrap_or(&client.project);
-    let path = format!("{project}/_apis/git/repositories?api-version=7.1");
+    let path = format!(
+        "{project}/_apis/git/repositories?api-version=7.1",
+        project = encode_path_segment(project)
+    );
     // The project is already scoped by the URI; including it in the body with
     // a name (rather than UUID) makes ADO reject the request. defaultBranch is
     // also omitted — an empty repo has no refs to set, and `git init` on the
@@ -184,7 +185,7 @@ async fn clone(args: CloneArgs, client: &AdoClient) -> Result<()> {
     let repo = lookup_repo(client, project, &args.name).await?;
 
     let dest = args.dest.unwrap_or_else(|| repo.name.clone());
-    let auth_url = inject_pat(&repo.remote_url, client.pat());
+    let auth_url = inject_pat(&repo.remote_url, client.pat())?;
 
     println!("Cloning {} into {dest}...", repo.name);
     let status = Command::new("git")
@@ -203,7 +204,9 @@ async fn clone(args: CloneArgs, client: &AdoClient) -> Result<()> {
             .status()
             .context("failed to rewrite origin URL after clone")?;
         if !st.success() {
-            eprintln!("warning: could not rewrite origin URL — PAT may remain in {dest}/.git/config");
+            eprintln!(
+                "warning: could not rewrite origin URL — PAT may remain in {dest}/.git/config"
+            );
         }
     }
     println!("Done.");
@@ -218,7 +221,11 @@ async fn delete(args: DeleteArgs, client: &AdoClient) -> Result<()> {
     }
     let project = args.project.as_deref().unwrap_or(&client.project);
     let repo = lookup_repo(client, project, &args.name).await?;
-    let path = format!("{project}/_apis/git/repositories/{}?api-version=7.1", repo.id);
+    let path = format!(
+        "{project}/_apis/git/repositories/{}?api-version=7.1",
+        encode_path_segment(&repo.id),
+        project = encode_path_segment(project)
+    );
     client.delete_no_body(&path).await?;
     println!("Deleted repo {} ({})", repo.name, repo.id);
     Ok(())
@@ -227,19 +234,43 @@ async fn delete(args: DeleteArgs, client: &AdoClient) -> Result<()> {
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 async fn lookup_repo(client: &AdoClient, project: &str, name_or_id: &str) -> Result<Repository> {
-    let path = format!("{project}/_apis/git/repositories/{name_or_id}?api-version=7.1");
+    let path = format!(
+        "{project}/_apis/git/repositories/{repo}?api-version=7.1",
+        project = encode_path_segment(project),
+        repo = encode_path_segment(name_or_id)
+    );
     client
         .get_json(&path)
         .await
         .with_context(|| format!("could not find repo '{name_or_id}' in project '{project}'"))
 }
 
+fn repo_list_lines(repos: &[Repository]) -> Vec<String> {
+    let width = repos.iter().map(|r| r.name.len()).max().unwrap_or(0);
+    repos
+        .iter()
+        .map(|r| format!("{:width$}  {}", r.name, r.remote_url, width = width))
+        .collect()
+}
+
+fn repo_table_rows(repos: &[Repository]) -> Vec<Vec<String>> {
+    repos
+        .iter()
+        .map(|r| vec![r.name.clone(), r.remote_url.clone()])
+        .collect()
+}
+
 /// Take an ADO HTTPS clone URL and inject the PAT as `anything:<pat>@`.
 /// Strips any existing `user@` prefix so we don't end up with two userinfo blocks.
-fn inject_pat(remote_url: &str, pat: &str) -> String {
-    let after_scheme = remote_url.strip_prefix("https://").unwrap_or(remote_url);
-    let host_path = after_scheme.split_once('@').map(|(_, hp)| hp).unwrap_or(after_scheme);
-    format!("https://anything:{pat}@{host_path}")
+fn inject_pat(remote_url: &str, pat: &str) -> Result<String> {
+    let after_scheme = remote_url
+        .strip_prefix("https://")
+        .with_context(|| format!("repo clone URL is not HTTPS: {remote_url}"))?;
+    let host_path = after_scheme
+        .split_once('@')
+        .map(|(_, hp)| hp)
+        .unwrap_or(after_scheme);
+    Ok(format!("https://anything:{pat}@{host_path}"))
 }
 
 #[cfg(test)]
@@ -249,7 +280,7 @@ mod tests {
     #[test]
     fn inject_pat_replaces_existing_userinfo() {
         let url = "https://jacobragsdale@dev.azure.com/jacobragsdale/development/_git/development";
-        let injected = inject_pat(url, "TOKEN");
+        let injected = inject_pat(url, "TOKEN").unwrap();
         assert_eq!(
             injected,
             "https://anything:TOKEN@dev.azure.com/jacobragsdale/development/_git/development"
@@ -259,7 +290,7 @@ mod tests {
     #[test]
     fn inject_pat_handles_no_userinfo() {
         let url = "https://dev.azure.com/jacobragsdale/development/_git/development";
-        let injected = inject_pat(url, "TOKEN");
+        let injected = inject_pat(url, "TOKEN").unwrap();
         assert_eq!(
             injected,
             "https://anything:TOKEN@dev.azure.com/jacobragsdale/development/_git/development"

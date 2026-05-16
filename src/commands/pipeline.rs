@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::Duration;
 
-use crate::client::AdoClient;
+use crate::client::{AdoClient, encode_path_segment};
 use crate::fields::split_field_arg;
 use crate::output::{self, OutputFormat};
 
@@ -71,7 +71,7 @@ pub struct StatusArgs {
 
 // ── ADO API response shapes ──────────────────────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Pipeline {
     pub id: u32,
     pub name: String,
@@ -127,14 +127,22 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
                 println!("(no pipelines in {project})");
                 return Ok(());
             }
-            let id_width = resp.value.iter().map(|p| p.id.to_string().len()).max().unwrap_or(1);
+            let id_width = resp
+                .value
+                .iter()
+                .map(|p| p.id.to_string().len())
+                .max()
+                .unwrap_or(1);
             let name_width = resp.value.iter().map(|p| p.name.len()).max().unwrap_or(0);
             for p in &resp.value {
                 let folder = p.folder.as_deref().unwrap_or("/");
                 println!(
                     "{:>id$}  {:name$}  (folder: {})",
-                    p.id, p.name, folder,
-                    id = id_width, name = name_width
+                    p.id,
+                    p.name,
+                    folder,
+                    id = id_width,
+                    name = name_width
                 );
             }
         }
@@ -165,36 +173,22 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
 async fn run_pipeline(args: RunArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     let project = args.project.as_deref().unwrap_or(&client.project);
     let pipeline = resolve_pipeline(client, project, &args.pipeline).await?;
-
-    let mut body = json!({
-        "resources": {
-            "repositories": {
-                "self": {
-                    "refName": format!("refs/heads/{}", args.branch),
-                }
-            }
-        }
-    });
-
-    if !args.variables.is_empty() {
-        let mut vars = serde_json::Map::new();
-        for entry in &args.variables {
-            let (k, v) = split_field_arg(entry)?;
-            vars.insert(k.to_string(), json!({ "value": v }));
-        }
-        body["variables"] = serde_json::Value::Object(vars);
-    }
+    let body = build_run_body(&args.branch, &args.variables)?;
 
     let path = format!(
         "{project}/_apis/pipelines/{}/runs?api-version=7.1",
-        pipeline.id
+        pipeline.id,
+        project = encode_path_segment(project)
     );
     let started: PipelineRun = client.post_json(&path, &body).await?;
 
     match output {
         OutputFormat::Json => output::print_json(&started)?,
         OutputFormat::Text | OutputFormat::Table => {
-            println!("Started run #{} for pipeline '{}'", started.id, pipeline.name);
+            println!(
+                "Started run #{} for pipeline '{}'",
+                started.id, pipeline.name
+            );
             println!(
                 "Track status: ado pipeline status {} --pipeline-id {}",
                 started.id, pipeline.id
@@ -210,7 +204,9 @@ async fn status(args: StatusArgs, client: &AdoClient, output: &OutputFormat) -> 
     let project = args.project.as_deref().unwrap_or(&client.project);
     let path = format!(
         "{project}/_apis/pipelines/{}/runs/{}?api-version=7.1",
-        args.pipeline_id, args.run_id
+        args.pipeline_id,
+        args.run_id,
+        project = encode_path_segment(project)
     );
 
     if !args.watch {
@@ -239,7 +235,10 @@ async fn status(args: StatusArgs, client: &AdoClient, output: &OutputFormat) -> 
         }
         if run.state.eq_ignore_ascii_case("completed") {
             println!();
-            println!("Run finished: {}", run.result.as_deref().unwrap_or("(no result)"));
+            println!(
+                "Run finished: {}",
+                run.result.as_deref().unwrap_or("(no result)")
+            );
             return Ok(());
         }
         tokio::time::sleep(Duration::from_secs(10)).await;
@@ -260,10 +259,41 @@ fn print_run_text(run: &PipelineRun) {
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 async fn fetch_pipelines(client: &AdoClient, project: &str) -> Result<PipelineListResponse> {
-    let path = format!("{project}/_apis/pipelines?api-version=7.1");
+    let path = format!(
+        "{project}/_apis/pipelines?api-version=7.1",
+        project = encode_path_segment(project)
+    );
     let mut resp: PipelineListResponse = client.get_json(&path).await?;
     resp.value.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(resp)
+}
+
+fn build_run_body(branch: &str, variables: &[String]) -> Result<serde_json::Value> {
+    let mut body = json!({
+        "resources": {
+            "repositories": {
+                "self": {
+                    "refName": format!("refs/heads/{branch}"),
+                }
+            }
+        }
+    });
+
+    let variables = build_variables(variables)?;
+    if !variables.is_empty() {
+        body["variables"] = serde_json::Value::Object(variables);
+    }
+
+    Ok(body)
+}
+
+fn build_variables(entries: &[String]) -> Result<serde_json::Map<String, serde_json::Value>> {
+    let mut variables = serde_json::Map::new();
+    for entry in entries {
+        let (key, value) = split_field_arg(entry)?;
+        variables.insert(key.to_string(), json!({ "value": value }));
+    }
+    Ok(variables)
 }
 
 /// Accepts a numeric pipeline ID or a (case-insensitive) name. Returns the
@@ -271,29 +301,38 @@ async fn fetch_pipelines(client: &AdoClient, project: &str) -> Result<PipelineLi
 /// user can pick by ID.
 async fn resolve_pipeline(client: &AdoClient, project: &str, input: &str) -> Result<Pipeline> {
     if let Ok(id) = input.parse::<u32>() {
-        let path = format!("{project}/_apis/pipelines/{id}?api-version=7.1");
-        return client.get_json(&path).await
+        let path = format!(
+            "{project}/_apis/pipelines/{id}?api-version=7.1",
+            project = encode_path_segment(project)
+        );
+        return client
+            .get_json(&path)
+            .await
             .with_context(|| format!("could not find pipeline {id}"));
     }
 
     let resp = fetch_pipelines(client, project).await?;
-    let matches: Vec<&Pipeline> = resp
-        .value
+    select_pipeline(project, input, &resp.value)
+}
+
+fn select_pipeline(project: &str, input: &str, pipelines: &[Pipeline]) -> Result<Pipeline> {
+    let matches: Vec<&Pipeline> = pipelines
         .iter()
         .filter(|p| p.name.eq_ignore_ascii_case(input))
         .collect();
 
     match matches.len() {
         0 => bail!("no pipeline named '{input}' in {project}"),
-        1 => Ok(Pipeline {
-            id: matches[0].id,
-            name: matches[0].name.clone(),
-            folder: matches[0].folder.clone(),
-            revision: matches[0].revision,
-        }),
+        1 => Ok(matches[0].clone()),
         _ => {
-            let ids: Vec<String> = matches.iter().map(|p| format!("  {} (id {})", p.name, p.id)).collect();
-            bail!("multiple pipelines match '{input}':\n{}\nuse a numeric ID instead", ids.join("\n"));
+            let ids: Vec<String> = matches
+                .iter()
+                .map(|p| format!("  {} (id {})", p.name, p.id))
+                .collect();
+            bail!(
+                "multiple pipelines match '{input}':\n{}\nuse a numeric ID instead",
+                ids.join("\n")
+            );
         }
     }
 }

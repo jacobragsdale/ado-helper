@@ -1,0 +1,21 @@
+{
+  "value": [
+    {
+      "pullRequestId": 1,
+      "title": "ado-cli PR smoke test (updated)",
+      "status": "abandoned",
+      "createdBy": {
+        "displayName": "Jacob Ragsdale",
+        "uniqueName": "jacobragsdale@protonmail.com",
+        "id": "9914f7cf-b458-6698-8928-51e02a5c340f"
+      },
+      "sourceRefName": "refs/heads/ado-cli-pr-smoke",
+      "targetRefName": "refs/heads/main",
+      "isDraft": false,
+      "mergeStatus": null,
+      "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/git/repositories/07172dbb-fc89-40a3-bcc3-ca071dd1580f/pullRequests/1",
+      "description": "verifying pr create + update + abandon"
+    }
+  ],
+  "count": 1
+}

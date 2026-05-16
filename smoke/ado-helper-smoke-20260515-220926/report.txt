@@ -1,0 +1,28 @@
+Smoke report: ado-helper-smoke-20260515-220926
+
+Passed:
+- cargo build
+- config show
+- repo list/create/clone/delete
+- pr list with explicit repo, create/list/view/update/approve/comment/threads/thread-reply/thread-resolve/abandon/reactivate
+- pipeline list
+- wi create/list/view/update/comment/comments/comment-edit/comment-delete/link/links/link-rm/attach/history/delete
+- cleanup verification: no repo leftovers, work item search count 0
+- cargo fmt --check
+- cargo clippy --all-targets -- -D warnings
+- cargo test
+
+Skipped:
+- wi open and pr open, to avoid browser launch side effects
+- pipeline run/status, because pipeline list returned count 0
+
+Failed / issues found:
+- initial pr list --status all without --repo failed by inferring local repo ado-helper, which does not exist in ADO
+- config set could not be isolated with XDG_CONFIG_HOME on macOS; it wrote to Application Support, then was restored
+- pr complete failed: ADO requires LastMergeSourceCommit; PR was abandoned during cleanup and repo was deleted
+- several mutating commands ignored --output json and returned text: wi link, wi attach, pr approve, pr abandon
+
+Cleanup leftovers:
+- ADO repo leftovers: none
+- ADO work item search leftovers: 0
+- local smoke logs retained at smoke/ado-helper-smoke-20260515-220926

@@ -1,0 +1,71 @@
+{
+    "id": 5,
+    "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/5",
+    "fields": {
+        "Microsoft.VSTS.Common.Priority": 2,
+        "Microsoft.VSTS.Common.StateChangeDate": "2026-05-16T03:10:44.143Z",
+        "System.AreaId": 8,
+        "System.AreaLevel1": "development",
+        "System.AreaPath": "development",
+        "System.AuthorizedAs": {
+            "_links": {
+                "avatar": {
+                    "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                }
+            },
+            "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+            "displayName": "Jacob Ragsdale",
+            "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+            "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+            "uniqueName": "jacobragsdale@protonmail.com",
+            "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+        },
+        "System.AuthorizedDate": "2026-05-16T03:10:44.143Z",
+        "System.ChangedBy": {
+            "_links": {
+                "avatar": {
+                    "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                }
+            },
+            "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+            "displayName": "Jacob Ragsdale",
+            "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+            "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+            "uniqueName": "jacobragsdale@protonmail.com",
+            "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+        },
+        "System.ChangedDate": "2026-05-16T03:10:44.143Z",
+        "System.CommentCount": 0,
+        "System.CreatedBy": {
+            "_links": {
+                "avatar": {
+                    "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                }
+            },
+            "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+            "displayName": "Jacob Ragsdale",
+            "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+            "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+            "uniqueName": "jacobragsdale@protonmail.com",
+            "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+        },
+        "System.CreatedDate": "2026-05-16T03:10:44.143Z",
+        "System.Description": "Smoke test linked disposable work item for ado-helper-smoke-20260515-220926",
+        "System.Id": 5,
+        "System.IterationId": 5,
+        "System.IterationLevel1": "development",
+        "System.IterationPath": "development",
+        "System.NodeName": "development",
+        "System.PersonId": 5960694,
+        "System.Reason": "Added to backlog",
+        "System.Rev": 1,
+        "System.RevisedDate": "9999-01-01T00:00:00Z",
+        "System.State": "To Do",
+        "System.Tags": "ado-helper-smoke-20260515-220926",
+        "System.TeamProject": "development",
+        "System.Title": "ado-helper-smoke-20260515-220926 linked work item",
+        "System.Watermark": 13,
+        "System.WorkItemType": "Task"
+    },
+    "relations": []
+}

@@ -1,0 +1,8 @@
+config file: /Users/jacob/Development/ado-helper/smoke/ado-helper-smoke-fix-20260515-221908/home/Library/Application Support/ado/config.toml
+org:         https://dev.azure.com/smoke-test
+project:     smoke-project
+
+environment overrides (loaded from .env if present):
+  ADO_ORG_URL = https://dev.azure.com/jacobragsdale
+  ADO_PROJECT = development
+  ADO_PAT     = (set, hidden)

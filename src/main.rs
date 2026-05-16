@@ -92,8 +92,8 @@ fn build_client(cli_org: Option<String>, cli_project: Option<String>) -> Result<
         .or(cfg.project)
         .context("ADO project not set — pass --project, set ADO_PROJECT in .env, or run `ado config set --project <name>`")?;
 
-    let pat = std::env::var("ADO_PAT")
-        .context("ADO_PAT not set — add it to .env (see .env.example)")?;
+    let pat =
+        std::env::var("ADO_PAT").context("ADO_PAT not set — add it to .env (see .env.example)")?;
 
     AdoClient::new(org, project, pat)
 }

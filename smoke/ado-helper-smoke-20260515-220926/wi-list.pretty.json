@@ -1,0 +1,37 @@
+[
+    {
+        "id": 1,
+        "url": "https://dev.azure.com/jacobragsdale/_apis/wit/workItems/1",
+        "fields": {
+            "System.AssignedTo": {
+                "_links": {
+                    "avatar": {
+                        "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                    }
+                },
+                "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "displayName": "Jacob Ragsdale",
+                "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "uniqueName": "jacobragsdale@protonmail.com",
+                "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+            },
+            "System.Id": 1,
+            "System.State": "Doing",
+            "System.Title": "ado-helper smoke test ticket (full field test)",
+            "System.WorkItemType": "Task"
+        },
+        "relations": []
+    },
+    {
+        "id": 3,
+        "url": "https://dev.azure.com/jacobragsdale/_apis/wit/workItems/3",
+        "fields": {
+            "System.Id": 3,
+            "System.State": "To Do",
+            "System.Title": "Helper ticket for link test",
+            "System.WorkItemType": "Task"
+        },
+        "relations": []
+    }
+]

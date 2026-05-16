@@ -1,0 +1,6 @@
+SMOKE_PREFIX=ado-helper-smoke-20260515-220926
+SMOKE_REPO=ado-helper-smoke-20260515-220926-repo
+SMOKE_WI_TITLE=ado-helper-smoke-20260515-220926 work item
+SMOKE_BRANCH=ado-helper-smoke-20260515-220926-branch
+SMOKE_DIR=smoke/ado-helper-smoke-20260515-220926
+SMOKE_CLONE=/Users/jacob/Development/ado-helper/smoke/ado-helper-smoke-20260515-220926/clone
