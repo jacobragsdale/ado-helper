@@ -5,6 +5,9 @@ use std::path::PathBuf;
 
 /// Top-level args for `ado config`
 #[derive(Args)]
+#[command(
+    after_help = "Examples:\n  ado config set --org https://dev.azure.com/myorg --project MyProject\n  ado config show\n\nSaved config lives in your OS config directory. Environment variables loaded from .env override saved values."
+)]
 pub struct ConfigArgs {
     #[command(subcommand)]
     pub command: ConfigCommand,
@@ -13,20 +16,26 @@ pub struct ConfigArgs {
 #[derive(Subcommand)]
 pub enum ConfigCommand {
     /// Set configuration values
+    #[command(
+        after_help = "Examples:\n  ado config set --org https://dev.azure.com/myorg\n  ado config set --project MyProject\n  ado config set --org https://dev.azure.com/myorg --project MyProject"
+    )]
     Set(SetArgs),
 
     /// Print current configuration
+    #[command(
+        after_help = "Example:\n  ado config show\n\nADO_PAT is reported as set or not set, but the token value is never printed."
+    )]
     Show,
 }
 
 #[derive(Args)]
 pub struct SetArgs {
     /// Azure DevOps organization URL (e.g. https://dev.azure.com/myorg)
-    #[arg(long)]
+    #[arg(long, value_name = "URL", value_hint = clap::ValueHint::Url)]
     pub org: Option<String>,
 
     /// Default project name
-    #[arg(long)]
+    #[arg(long, value_name = "PROJECT")]
     pub project: Option<String>,
 }
 

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::process::Command;
@@ -10,6 +10,9 @@ use crate::fields::{coerce_value, split_field_arg};
 use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
+#[command(
+    after_help = "Examples:\n  ado pr create --repo my-service --title \"Add health check\" --target main\n  ado pr list --repo my-service --status active --output table\n  ado pr view 42 --repo my-service\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr threads 42 --repo my-service\n  ado pr complete 42 --repo my-service --merge-strategy squash --delete-source-branch\n\nWhen --repo is omitted, ado uses ADO_REPO or the current git origin remote."
+)]
 pub struct PrArgs {
     #[command(subcommand)]
     pub command: PrCommand,
@@ -18,13 +21,30 @@ pub struct PrArgs {
 #[derive(Subcommand)]
 pub enum PrCommand {
     /// Create a new pull request
+    #[command(
+        after_help = "Examples:\n  ado pr create --repo my-service --title \"Add health check\"\n  ado pr create --repo my-service --title \"Ship feature\" --source feature/login --target main --reviewers alice@example.com,bob@example.com\n  ado pr create --repo my-service --title \"Draft spike\" --draft --field auto-complete=false\n\nIf --source is omitted, ado uses the current git branch."
+    )]
     Create(CreateArgs),
 
     /// List pull requests
+    #[command(
+        visible_alias = "ls",
+        after_help = "Examples:\n  ado pr list --repo my-service\n  ado pr ls --repo my-service --status all --output table\n  ado pr list --status completed"
+    )]
     List(ListArgs),
 
     /// View details of a pull request
+    #[command(
+        visible_alias = "show",
+        after_help = "Examples:\n  ado pr view 42 --repo my-service\n  ado pr show 42 --repo my-service --output json"
+    )]
     View(ViewArgs),
+
+    /// Link a work item to a pull request
+    #[command(
+        after_help = "Examples:\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr link-work-item 42 --work-item 123 --output json\n\nWhen --repo is omitted, ado uses ADO_REPO or the current git origin remote."
+    )]
+    LinkWorkItem(LinkWorkItemArgs),
 
     /// Edit title / description / arbitrary fields on a pull request
     Update(UpdateArgs),
@@ -36,6 +56,9 @@ pub enum PrCommand {
     Comment(CommentArgs),
 
     /// List comment threads on a pull request
+    #[command(
+        after_help = "Examples:\n  ado pr threads 42 --repo my-service\n  ado pr threads 42 --repo my-service --output table\n\nUse thread IDs from this command with `ado pr thread-reply` or `ado pr thread-resolve`."
+    )]
     Threads(ThreadsArgs),
 
     /// Reply to an existing pull request comment thread
@@ -45,6 +68,9 @@ pub enum PrCommand {
     ThreadResolve(ThreadResolveArgs),
 
     /// Complete (merge) a pull request
+    #[command(
+        after_help = "Examples:\n  ado pr complete 42 --repo my-service\n  ado pr complete 42 --repo my-service --merge-strategy squash --delete-source-branch\n  ado pr complete 42 --repo my-service --merge-strategy noFastForward"
+    )]
     Complete(CompleteArgs),
 
     /// Abandon a pull request (close without merging)
@@ -54,25 +80,29 @@ pub enum PrCommand {
     Reactivate(ReactivateArgs),
 
     /// Open a pull request in the browser
+    #[command(
+        visible_alias = "browse",
+        after_help = "Examples:\n  ado pr open 42 --repo my-service\n  ado pr browse 42 --repo my-service"
+    )]
     Open(OpenArgs),
 }
 
 #[derive(Args)]
 pub struct CreateArgs {
     /// Pull request title
-    #[arg(long)]
+    #[arg(long, value_name = "TEXT")]
     pub title: String,
 
     /// Source branch (defaults to current git branch)
-    #[arg(long)]
+    #[arg(long, value_name = "BRANCH")]
     pub source: Option<String>,
 
     /// Target branch
-    #[arg(long, default_value = "main")]
+    #[arg(long, value_name = "BRANCH", default_value = "main")]
     pub target: String,
 
     /// Description / body text
-    #[arg(long)]
+    #[arg(long, value_name = "TEXT")]
     pub description: Option<String>,
 
     /// Create as a draft PR
@@ -80,11 +110,11 @@ pub struct CreateArgs {
     pub draft: bool,
 
     /// Comma-separated list of reviewer display names or emails
-    #[arg(long, value_delimiter = ',')]
+    #[arg(long, value_delimiter = ',', value_name = "USER[,USER]")]
     pub reviewers: Vec<String>,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 
     /// Generic field set, repeatable. e.g. --field isDraft=false
@@ -92,38 +122,74 @@ pub struct CreateArgs {
     pub field: Vec<String>,
 }
 
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum PrStatus {
+    Active,
+    Completed,
+    Abandoned,
+    All,
+}
+
+impl PrStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Completed => "completed",
+            Self::Abandoned => "abandoned",
+            Self::All => "all",
+        }
+    }
+}
+
 #[derive(Args)]
 pub struct ListArgs {
     /// Filter by status (active, completed, abandoned, all)
-    #[arg(long, default_value = "active")]
-    pub status: String,
+    #[arg(long, value_enum, default_value = "active")]
+    pub status: PrStatus,
 
     /// Repository name (omit to list across the whole project)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
 #[derive(Args)]
 pub struct ViewArgs {
     /// Pull request ID
+    #[arg(value_name = "ID")]
     pub id: u32,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
+    pub repo: Option<String>,
+}
+
+#[derive(Args)]
+pub struct LinkWorkItemArgs {
+    /// Pull request ID
+    #[arg(value_name = "ID")]
+    pub id: u32,
+
+    /// Work item ID to link to the pull request
+    #[arg(long, value_name = "ID")]
+    pub work_item: u32,
+
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
 #[derive(Args)]
 pub struct UpdateArgs {
     /// Pull request ID
+    #[arg(value_name = "ID")]
     pub id: u32,
 
     /// New title
-    #[arg(long)]
+    #[arg(long, value_name = "TEXT")]
     pub title: Option<String>,
 
     /// New description
-    #[arg(long)]
+    #[arg(long, value_name = "TEXT")]
     pub description: Option<String>,
 
     /// Generic field set, repeatable. Use either short alias or full ADO key.
@@ -132,13 +198,14 @@ pub struct UpdateArgs {
     pub field: Vec<String>,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
 #[derive(Args)]
 pub struct ApproveArgs {
     /// Pull request ID
+    #[arg(value_name = "ID")]
     pub id: u32,
 
     /// Vote value: 10=approve, 5=approve with suggestions, 0=no vote, -5=waiting, -10=reject
@@ -146,109 +213,140 @@ pub struct ApproveArgs {
     pub vote: i32,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
 #[derive(Args)]
 pub struct CommentArgs {
     /// Pull request ID
+    #[arg(value_name = "ID")]
     pub id: u32,
 
     /// Comment text (Markdown supported by Azure DevOps)
-    #[arg(long)]
+    #[arg(long, value_name = "MARKDOWN")]
     pub text: String,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
 #[derive(Args)]
 pub struct ThreadsArgs {
     /// Pull request ID
+    #[arg(value_name = "ID")]
     pub id: u32,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
 #[derive(Args)]
 pub struct ThreadReplyArgs {
     /// Pull request ID
+    #[arg(value_name = "ID")]
     pub id: u32,
 
     /// Thread ID (from `ado pr threads`)
+    #[arg(value_name = "THREAD_ID")]
     pub thread_id: u32,
 
     /// Reply text (Markdown supported by Azure DevOps)
-    #[arg(long)]
+    #[arg(long, value_name = "MARKDOWN")]
     pub text: String,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
 #[derive(Args)]
 pub struct ThreadResolveArgs {
     /// Pull request ID
+    #[arg(value_name = "ID")]
     pub id: u32,
 
     /// Thread ID (from `ado pr threads`)
+    #[arg(value_name = "THREAD_ID")]
     pub thread_id: u32,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
 #[derive(Args)]
 pub struct CompleteArgs {
     /// Pull request ID
+    #[arg(value_name = "ID")]
     pub id: u32,
 
     /// Delete the source branch after merge
     #[arg(long)]
     pub delete_source_branch: bool,
 
-    /// Merge strategy: noFastForward | squash | rebase | rebaseMerge
-    #[arg(long, default_value = "squash")]
-    pub merge_strategy: String,
+    /// Merge strategy to use when completing the PR
+    #[arg(long, value_enum, default_value = "squash")]
+    pub merge_strategy: MergeStrategy,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum MergeStrategy {
+    #[value(name = "noFastForward")]
+    NoFastForward,
+    Squash,
+    Rebase,
+    #[value(name = "rebaseMerge")]
+    RebaseMerge,
+}
+
+impl MergeStrategy {
+    fn as_ado(self) -> &'static str {
+        match self {
+            Self::NoFastForward => "noFastForward",
+            Self::Squash => "squash",
+            Self::Rebase => "rebase",
+            Self::RebaseMerge => "rebaseMerge",
+        }
+    }
 }
 
 #[derive(Args)]
 pub struct AbandonArgs {
     /// Pull request ID
+    #[arg(value_name = "ID")]
     pub id: u32,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
 #[derive(Args)]
 pub struct ReactivateArgs {
     /// Pull request ID
+    #[arg(value_name = "ID")]
     pub id: u32,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
 #[derive(Args)]
 pub struct OpenArgs {
     /// Pull request ID
+    #[arg(value_name = "ID")]
     pub id: u32,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
@@ -394,6 +492,7 @@ pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Res
         PrCommand::Create(a) => create(a, client, output).await,
         PrCommand::List(a) => list(a, client, output).await,
         PrCommand::View(a) => view(a, client, output).await,
+        PrCommand::LinkWorkItem(a) => link_work_item(a, client, output).await,
         PrCommand::Update(a) => update(a, client, output).await,
         PrCommand::Approve(a) => approve(a, client, output).await,
         PrCommand::Comment(a) => comment(a, client, output).await,
@@ -411,7 +510,7 @@ pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Res
 
 async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     let repo = resolve_repo_optional(args.repo.as_deref());
-    let status = &args.status;
+    let status = args.status.as_str();
     let project = project_segment(client);
     let path = match &repo {
         Some(r) => format!(
@@ -519,6 +618,45 @@ async fn view(args: ViewArgs, client: &AdoClient, output: &OutputFormat) -> Resu
                 }
             }
             println!("URL:      {}", web_url(client, &repo, pr.id));
+        }
+    }
+    Ok(())
+}
+
+// ── link-work-item ───────────────────────────────────────────────────────────
+
+async fn link_work_item(
+    args: LinkWorkItemArgs,
+    client: &AdoClient,
+    output: &OutputFormat,
+) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let pr_path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
+        project_segment(client),
+        repo_segment(&repo),
+        args.id
+    );
+    let pr: serde_json::Value = client.get_json(&pr_path).await?;
+    let artifact_id = pr
+        .get("artifactId")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .with_context(|| {
+            format!(
+                "PR #{} response missing artifactId; cannot link work item",
+                args.id
+            )
+        })?;
+
+    let ops = build_pr_artifact_link_patch(artifact_id);
+    let wi_path = format!("_apis/wit/workitems/{}?api-version=7.1", args.work_item);
+    let wi: serde_json::Value = client.patch_json_patch(&wi_path, &ops).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&wi)?,
+        OutputFormat::Text | OutputFormat::Table => {
+            println!("Linked work item #{} to PR #{}", args.work_item, args.id);
         }
     }
     Ok(())
@@ -751,7 +889,7 @@ async fn complete(args: CompleteArgs, client: &AdoClient, output: &OutputFormat)
         "lastMergeSourceCommit": last_merge_source_commit,
         "completionOptions": {
             "deleteSourceBranch": args.delete_source_branch,
-            "mergeStrategy": args.merge_strategy,
+            "mergeStrategy": args.merge_strategy.as_ado(),
         }
     });
     let mut pr: PullRequest = client.patch_json(&path, &body).await?;
@@ -773,7 +911,7 @@ async fn complete(args: CompleteArgs, client: &AdoClient, output: &OutputFormat)
     match output {
         OutputFormat::Json => output::print_json(&pr)?,
         OutputFormat::Text | OutputFormat::Table => {
-            println!("Completed PR #{} ({})", pr.id, args.merge_strategy)
+            println!("Completed PR #{} ({})", pr.id, args.merge_strategy.as_ado())
         }
     }
     Ok(())
@@ -871,6 +1009,20 @@ fn project_segment(client: &AdoClient) -> String {
 
 fn repo_segment(repo: &str) -> String {
     encode_path_segment(repo)
+}
+
+fn build_pr_artifact_link_patch(artifact_id: &str) -> serde_json::Value {
+    json!([
+        {
+            "op": "add",
+            "path": "/relations/-",
+            "value": {
+                "rel": "ArtifactLink",
+                "url": artifact_id,
+                "attributes": { "name": "Pull Request" }
+            }
+        }
+    ])
 }
 
 fn strip_refs_heads(s: &str) -> &str {
@@ -1146,4 +1298,29 @@ fn resolve_repo_required(cli: Option<&str>) -> Result<String> {
     resolve_repo_optional(cli).context(
         "could not determine repo — pass --repo, set ADO_REPO in .env, or run from a git repo with an ADO origin",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_pr_artifact_link_patch() {
+        let patch = build_pr_artifact_link_patch("vstfs:///Git/PullRequestId/project%2Frepo%2F42");
+
+        assert_eq!(
+            patch,
+            json!([
+                {
+                    "op": "add",
+                    "path": "/relations/-",
+                    "value": {
+                        "rel": "ArtifactLink",
+                        "url": "vstfs:///Git/PullRequestId/project%2Frepo%2F42",
+                        "attributes": { "name": "Pull Request" }
+                    }
+                }
+            ])
+        );
+    }
 }
