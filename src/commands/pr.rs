@@ -2,18 +2,17 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
 use crate::client::{AdoClient, encode_path_segment};
-use crate::commands::repo::{inject_pat, lookup_repo};
 use crate::fields::{coerce_value, split_field_arg};
 use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  ado pr create --repo my-service --title \"Add health check\" --target main\n  ado pr list --repo my-service --status active --output table\n  ado pr view 42 --repo my-service\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr checks 42 --repo my-service\n  ado pr threads 42 --repo my-service\n  ado pr checkout 42 --repo my-service\n  ado pr checkout-clean --all\n  ado pr complete 42 --repo my-service --merge-strategy squash --delete-source-branch\n\nWhen --repo is omitted, ado uses ADO_REPO or the current git origin remote."
+    after_help = "Examples:\n  ado pr create --repo my-service --title \"Add health check\" --target main\n  ado pr list --repo my-service --status active --output table\n  ado pr view 42 --repo my-service\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr checks 42 --repo my-service\n  ado pr threads 42 --repo my-service\n  ado pr checkout 42\n  ado pr complete 42 --repo my-service --merge-strategy squash --delete-source-branch\n\nWhen --repo is omitted, ado uses ADO_REPO or the current git origin remote."
 )]
 pub struct PrArgs {
     #[command(subcommand)]
@@ -97,15 +96,9 @@ pub enum PrCommand {
 
     /// Check out a pull request's source branch locally
     #[command(
-        after_help = "Examples:\n  ado pr checkout 42 --repo my-service\n  ado pr checkout 42 --branch review/alice-login\n  ado pr checkout 42 --dir ./review-42\n  ado pr checkout 42 --detach\n\nIf you're already inside a clone of the PR's repo, fetches and checks out in place. Otherwise, clones to ~/.ado/reviews/<repo>-pr-<id> (override with --dir). Same-repo PRs only — forked PRs are not yet supported."
+        after_help = "Examples:\n  ado pr checkout 42\n  ado pr checkout 42 --branch review/alice-login\n\nRequires a clean working tree. Must be run inside a clone of the PR's repo. Same-repo PRs only — forked PRs are not supported."
     )]
     Checkout(CheckoutArgs),
-
-    /// Remove cached PR-review clones from ~/.ado/reviews
-    #[command(
-        after_help = "Examples:\n  ado pr checkout-clean 42 --repo my-service\n  ado pr checkout-clean --all\n  ado pr checkout-clean --all --dry-run\n\nOnly removes directories under ~/.ado/reviews — never touches your in-place clones."
-    )]
-    CheckoutClean(CheckoutCleanArgs),
 }
 
 #[derive(Args)]
@@ -392,34 +385,7 @@ pub struct CheckoutArgs {
     #[arg(long, value_name = "BRANCH")]
     pub branch: Option<String>,
 
-    /// Check out as a detached HEAD instead of creating a local branch
-    #[arg(long, conflicts_with = "branch")]
-    pub detach: bool,
-
-    /// Destination directory for fresh-clone mode (defaults to ~/.ado/reviews/<repo>-pr-<id>)
-    #[arg(long, value_name = "PATH", value_hint = clap::ValueHint::DirPath)]
-    pub dir: Option<String>,
-
     /// Repository name (defaults to ADO_REPO env var or origin remote)
-    #[arg(long, value_name = "REPO")]
-    pub repo: Option<String>,
-}
-
-#[derive(Args)]
-pub struct CheckoutCleanArgs {
-    /// PR ID to clean (omit with --all)
-    #[arg(value_name = "ID")]
-    pub id: Option<u32>,
-
-    /// Remove all review checkouts under ~/.ado/reviews
-    #[arg(long, conflicts_with = "id")]
-    pub all: bool,
-
-    /// Print what would be removed without removing it
-    #[arg(long)]
-    pub dry_run: bool,
-
-    /// Repo name when removing a specific PR (defaults to ADO_REPO / origin)
     #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
@@ -627,7 +593,6 @@ pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Res
         PrCommand::Reactivate(a) => reactivate(a, client, output).await,
         PrCommand::Open(a) => open(a, client).await,
         PrCommand::Checkout(a) => checkout(a, client).await,
-        PrCommand::CheckoutClean(a) => checkout_clean(a).await,
     }
 }
 
@@ -1204,6 +1169,21 @@ async fn open(args: OpenArgs, client: &AdoClient) -> Result<()> {
 
 async fn checkout(args: CheckoutArgs, client: &AdoClient) -> Result<()> {
     let repo = resolve_repo_required(args.repo.as_deref())?;
+
+    let current_repo = repo_from_remote().with_context(|| {
+        format!(
+            "could not detect git repo from origin remote — run this command inside a clone of '{repo}'"
+        )
+    })?;
+    if !current_repo.eq_ignore_ascii_case(&repo) {
+        bail!(
+            "current repo is '{current_repo}' but PR #{} belongs to '{repo}' — run this command inside a clone of '{repo}'",
+            args.id
+        );
+    }
+
+    require_clean_working_tree()?;
+
     let pr_path = format!(
         "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
         project_segment(client),
@@ -1214,7 +1194,7 @@ async fn checkout(args: CheckoutArgs, client: &AdoClient) -> Result<()> {
 
     if pr.get("forkSource").is_some_and(|v| !v.is_null()) {
         bail!(
-            "PR #{} is from a forked repository; cross-fork checkout is not supported yet",
+            "PR #{} is from a forked repository; cross-fork checkout is not supported",
             args.id
         );
     }
@@ -1231,201 +1211,31 @@ async fn checkout(args: CheckoutArgs, client: &AdoClient) -> Result<()> {
         None => source_branch.to_string(),
     };
 
-    let in_place = repo_from_remote()
-        .map(|r| r.eq_ignore_ascii_case(&repo))
-        .unwrap_or(false)
-        && args.dir.is_none();
-
-    if in_place {
-        let fetch_spec = if args.detach {
-            format!("refs/heads/{source_branch}")
-        } else {
-            format!("refs/heads/{source_branch}:{local_branch}")
-        };
-        run_git(None, &["fetch", "origin", &fetch_spec])
-            .with_context(|| format!("git fetch origin {fetch_spec} failed"))?;
-        if args.detach {
-            run_git(None, &["checkout", "--detach", "FETCH_HEAD"])
-                .context("git checkout --detach FETCH_HEAD failed")?;
-            println!(
-                "Checked out PR #{} ({}) in place (detached HEAD)",
-                args.id, source_branch
-            );
-        } else {
-            run_git(None, &["checkout", &local_branch])
-                .with_context(|| format!("git checkout {local_branch} failed"))?;
-            println!(
-                "Checked out PR #{} ({} -> {}) in place",
-                args.id, source_branch, local_branch
-            );
-        }
-        return Ok(());
-    }
-
-    // Mode B — fresh clone.
-    let dest = match args.dir.as_deref() {
-        Some(d) => PathBuf::from(d),
-        None => default_review_dir(&repo, args.id)?,
-    };
-
-    if dest.exists() {
-        let non_empty = std::fs::read_dir(&dest)
-            .with_context(|| format!("could not read {}", dest.display()))?
-            .next()
-            .is_some();
-        if non_empty {
-            bail!(
-                "destination {} already exists and is not empty — pass --dir <path> or run `ado pr checkout-clean {} --repo {}`",
-                dest.display(),
-                args.id,
-                repo
-            );
-        }
-    }
-
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("could not create {}", parent.display()))?;
-    }
-
-    let repo_info = lookup_repo(client, &client.project, &repo).await?;
-    let auth_url = inject_pat(&repo_info.remote_url, client.pat())?;
-
-    println!("Cloning {} into {}...", repo, dest.display());
-    let dest_str = dest_to_string(&dest)?;
-    run_git(None, &["clone", "--no-checkout", &auth_url, &dest_str]).context("git clone failed")?;
-
-    // Fetch the PR source branch BEFORE rewriting origin to the credential-free
-    // URL, so the fetch can reuse the cloned PAT-bearing remote.
-    let fetch_spec = if args.detach {
-        format!("refs/heads/{source_branch}")
-    } else {
-        format!("refs/heads/{source_branch}:{local_branch}")
-    };
-    run_git(Some(&dest), &["fetch", "origin", &fetch_spec])
+    let fetch_spec = format!("refs/heads/{source_branch}:{local_branch}");
+    run_git(None, &["fetch", "origin", &fetch_spec])
         .with_context(|| format!("git fetch origin {fetch_spec} failed"))?;
+    run_git(None, &["checkout", &local_branch])
+        .with_context(|| format!("git checkout {local_branch} failed"))?;
 
-    // Now strip the PAT from .git/config so it doesn't leak via `git remote -v`.
-    run_git(
-        Some(&dest),
-        &["remote", "set-url", "origin", &repo_info.remote_url],
-    )
-    .context("could not rewrite origin URL after clone")?;
-
-    if args.detach {
-        run_git(Some(&dest), &["checkout", "--detach", "FETCH_HEAD"])
-            .context("git checkout --detach FETCH_HEAD failed")?;
-        println!(
-            "Checked out PR #{} ({}) at {} (detached HEAD)",
-            args.id,
-            source_branch,
-            dest.display()
-        );
-    } else {
-        run_git(Some(&dest), &["checkout", &local_branch])
-            .with_context(|| format!("git checkout {local_branch} failed"))?;
-        println!(
-            "Checked out PR #{} ({}) at {}",
-            args.id,
-            source_branch,
-            dest.display()
-        );
-    }
+    println!(
+        "Checked out PR #{} ({} -> {})",
+        args.id, source_branch, local_branch
+    );
     Ok(())
 }
 
-async fn checkout_clean(args: CheckoutCleanArgs) -> Result<()> {
-    let reviews_root = reviews_root()?;
-    let canonical_root = reviews_root.canonicalize().ok();
-
-    if args.all {
-        if !reviews_root.exists() {
-            println!("(no review checkouts)");
-            return Ok(());
-        }
-        let mut found = false;
-        let entries = std::fs::read_dir(&reviews_root)
-            .with_context(|| format!("could not read {}", reviews_root.display()))?;
-        for entry in entries {
-            let entry = entry?;
-            let path = entry.path();
-            found = true;
-            if args.dry_run {
-                println!("would remove: {}", path.display());
-                continue;
-            }
-            if !path_is_under(&path, canonical_root.as_deref()) {
-                eprintln!(
-                    "warning: refusing to remove {} (not under {})",
-                    path.display(),
-                    reviews_root.display()
-                );
-                continue;
-            }
-            std::fs::remove_dir_all(&path)
-                .with_context(|| format!("could not remove {}", path.display()))?;
-            println!("removed: {}", path.display());
-        }
-        if !found {
-            println!("(no review checkouts)");
-        }
-        return Ok(());
+fn require_clean_working_tree() -> Result<()> {
+    let out = Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .context("failed to run git status")?;
+    if !out.status.success() {
+        bail!("git status failed — is this a git repository?");
     }
-
-    let id = args
-        .id
-        .context("pass an ID or --all to ado pr checkout-clean")?;
-    let repo = resolve_repo_required(args.repo.as_deref())?;
-    let path = reviews_root.join(format!("{repo}-pr-{id}"));
-
-    if !path.exists() {
-        println!("(no checkout for PR #{id})");
-        return Ok(());
+    if !out.stdout.is_empty() {
+        bail!("working tree has uncommitted changes; commit or stash them before checking out a PR");
     }
-
-    if args.dry_run {
-        println!("would remove: {}", path.display());
-        return Ok(());
-    }
-
-    if !path_is_under(&path, canonical_root.as_deref()) {
-        bail!(
-            "refusing to remove {} (not under {})",
-            path.display(),
-            reviews_root.display()
-        );
-    }
-    std::fs::remove_dir_all(&path)
-        .with_context(|| format!("could not remove {}", path.display()))?;
-    println!("removed: {}", path.display());
     Ok(())
-}
-
-fn reviews_root() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("could not resolve $HOME")?;
-    Ok(home.join(".ado").join("reviews"))
-}
-
-fn default_review_dir(repo: &str, id: u32) -> Result<PathBuf> {
-    Ok(reviews_root()?.join(format!("{repo}-pr-{id}")))
-}
-
-fn dest_to_string(p: &Path) -> Result<String> {
-    p.to_str()
-        .map(String::from)
-        .with_context(|| format!("destination path is not valid UTF-8: {}", p.display()))
-}
-
-fn path_is_under(path: &Path, canonical_root: Option<&Path>) -> bool {
-    let Some(root) = canonical_root else {
-        // The reviews root doesn't exist (yet); nothing under it to remove anyway.
-        return false;
-    };
-    let canonical = match path.canonicalize() {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    canonical.starts_with(root)
 }
 
 fn run_git(cwd: Option<&Path>, args: &[&str]) -> Result<()> {
