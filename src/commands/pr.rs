@@ -2,16 +2,18 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
 use crate::client::{AdoClient, encode_path_segment};
+use crate::commands::repo::{inject_pat, lookup_repo};
 use crate::fields::{coerce_value, split_field_arg};
 use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  ado pr create --repo my-service --title \"Add health check\" --target main\n  ado pr list --repo my-service --status active --output table\n  ado pr view 42 --repo my-service\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr threads 42 --repo my-service\n  ado pr complete 42 --repo my-service --merge-strategy squash --delete-source-branch\n\nWhen --repo is omitted, ado uses ADO_REPO or the current git origin remote."
+    after_help = "Examples:\n  ado pr create --repo my-service --title \"Add health check\" --target main\n  ado pr list --repo my-service --status active --output table\n  ado pr view 42 --repo my-service\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr checks 42 --repo my-service\n  ado pr threads 42 --repo my-service\n  ado pr checkout 42 --repo my-service\n  ado pr checkout-clean --all\n  ado pr complete 42 --repo my-service --merge-strategy squash --delete-source-branch\n\nWhen --repo is omitted, ado uses ADO_REPO or the current git origin remote."
 )]
 pub struct PrArgs {
     #[command(subcommand)]
@@ -45,6 +47,13 @@ pub enum PrCommand {
         after_help = "Examples:\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr link-work-item 42 --work-item 123 --output json\n\nWhen --repo is omitted, ado uses ADO_REPO or the current git origin remote."
     )]
     LinkWorkItem(LinkWorkItemArgs),
+
+    /// Show policy/check evaluations on a pull request
+    #[command(
+        visible_alias = "check",
+        after_help = "Examples:\n  ado pr checks 42 --repo my-service\n  ado pr check 42 --output table\n\nShows every branch-policy gate (build validation, required reviewers, comment resolution, status posts) on the PR."
+    )]
+    Checks(ChecksArgs),
 
     /// Edit title / description / arbitrary fields on a pull request
     Update(UpdateArgs),
@@ -85,6 +94,18 @@ pub enum PrCommand {
         after_help = "Examples:\n  ado pr open 42 --repo my-service\n  ado pr browse 42 --repo my-service"
     )]
     Open(OpenArgs),
+
+    /// Check out a pull request's source branch locally
+    #[command(
+        after_help = "Examples:\n  ado pr checkout 42 --repo my-service\n  ado pr checkout 42 --branch review/alice-login\n  ado pr checkout 42 --dir ./review-42\n  ado pr checkout 42 --detach\n\nIf you're already inside a clone of the PR's repo, fetches and checks out in place. Otherwise, clones to ~/.ado/reviews/<repo>-pr-<id> (override with --dir). Same-repo PRs only — forked PRs are not yet supported."
+    )]
+    Checkout(CheckoutArgs),
+
+    /// Remove cached PR-review clones from ~/.ado/reviews
+    #[command(
+        after_help = "Examples:\n  ado pr checkout-clean 42 --repo my-service\n  ado pr checkout-clean --all\n  ado pr checkout-clean --all --dry-run\n\nOnly removes directories under ~/.ado/reviews — never touches your in-place clones."
+    )]
+    CheckoutClean(CheckoutCleanArgs),
 }
 
 #[derive(Args)]
@@ -172,6 +193,17 @@ pub struct LinkWorkItemArgs {
     /// Work item ID to link to the pull request
     #[arg(long, value_name = "ID")]
     pub work_item: u32,
+
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
+    #[arg(long, value_name = "REPO")]
+    pub repo: Option<String>,
+}
+
+#[derive(Args)]
+pub struct ChecksArgs {
+    /// Pull request ID
+    #[arg(value_name = "ID")]
+    pub id: u32,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
     #[arg(long, value_name = "REPO")]
@@ -350,6 +382,48 @@ pub struct OpenArgs {
     pub repo: Option<String>,
 }
 
+#[derive(Args)]
+pub struct CheckoutArgs {
+    /// Pull request ID
+    #[arg(value_name = "ID")]
+    pub id: u32,
+
+    /// Local branch name to create (defaults to the PR's source branch name)
+    #[arg(long, value_name = "BRANCH")]
+    pub branch: Option<String>,
+
+    /// Check out as a detached HEAD instead of creating a local branch
+    #[arg(long, conflicts_with = "branch")]
+    pub detach: bool,
+
+    /// Destination directory for fresh-clone mode (defaults to ~/.ado/reviews/<repo>-pr-<id>)
+    #[arg(long, value_name = "PATH", value_hint = clap::ValueHint::DirPath)]
+    pub dir: Option<String>,
+
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
+    #[arg(long, value_name = "REPO")]
+    pub repo: Option<String>,
+}
+
+#[derive(Args)]
+pub struct CheckoutCleanArgs {
+    /// PR ID to clean (omit with --all)
+    #[arg(value_name = "ID")]
+    pub id: Option<u32>,
+
+    /// Remove all review checkouts under ~/.ado/reviews
+    #[arg(long, conflicts_with = "id")]
+    pub all: bool,
+
+    /// Print what would be removed without removing it
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Repo name when removing a specific PR (defaults to ADO_REPO / origin)
+    #[arg(long, value_name = "REPO")]
+    pub repo: Option<String>,
+}
+
 // ── ADO API response shapes ──────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -485,6 +559,54 @@ struct IdentitiesResponse {
     value: Vec<IdentityRef>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PolicyEvaluationsResponse {
+    pub value: Vec<PolicyEvaluation>,
+    #[serde(default)]
+    pub count: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PolicyEvaluation {
+    #[serde(default, rename = "evaluationId")]
+    pub evaluation_id: String,
+
+    pub status: String,
+
+    #[serde(default)]
+    pub configuration: Option<PolicyConfiguration>,
+
+    #[serde(default, rename = "startedDate")]
+    pub started_date: Option<String>,
+
+    #[serde(default, rename = "completedDate")]
+    pub completed_date: Option<String>,
+
+    #[serde(default)]
+    pub context: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PolicyConfiguration {
+    #[serde(default, rename = "isBlocking")]
+    pub is_blocking: bool,
+
+    #[serde(default, rename = "isEnabled")]
+    pub is_enabled: bool,
+
+    #[serde(default, rename = "type")]
+    pub policy_type: Option<PolicyType>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PolicyType {
+    #[serde(default, rename = "displayName")]
+    pub display_name: String,
+
+    #[serde(default)]
+    pub id: String,
+}
+
 // ── Command dispatch ─────────────────────────────────────────────────────────
 
 pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
@@ -493,6 +615,7 @@ pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Res
         PrCommand::List(a) => list(a, client, output).await,
         PrCommand::View(a) => view(a, client, output).await,
         PrCommand::LinkWorkItem(a) => link_work_item(a, client, output).await,
+        PrCommand::Checks(a) => checks(a, client, output).await,
         PrCommand::Update(a) => update(a, client, output).await,
         PrCommand::Approve(a) => approve(a, client, output).await,
         PrCommand::Comment(a) => comment(a, client, output).await,
@@ -503,6 +626,8 @@ pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Res
         PrCommand::Abandon(a) => abandon(a, client, output).await,
         PrCommand::Reactivate(a) => reactivate(a, client, output).await,
         PrCommand::Open(a) => open(a, client).await,
+        PrCommand::Checkout(a) => checkout(a, client).await,
+        PrCommand::CheckoutClean(a) => checkout_clean(a).await,
     }
 }
 
@@ -660,6 +785,119 @@ async fn link_work_item(
         }
     }
     Ok(())
+}
+
+// ── checks ──────────────────────────────────────────────────────────────────
+
+async fn checks(args: ChecksArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let pr_path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
+        project_segment(client),
+        repo_segment(&repo),
+        args.id
+    );
+    let pr: serde_json::Value = client.get_json(&pr_path).await?;
+    let project_id = pr
+        .pointer("/repository/project/id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .with_context(|| {
+            format!(
+                "PR #{} response missing repository.project.id; cannot fetch policy evaluations",
+                args.id
+            )
+        })?;
+
+    // Policy evaluations key off the CodeReview artifactId, not the Git one
+    // returned by the PR endpoint. Build it from projectId + PR id.
+    let artifact_id = format!("vstfs:///CodeReview/CodeReviewId/{project_id}/{}", args.id);
+    let path = format!(
+        "{}/_apis/policy/evaluations?artifactId={}&api-version=7.1-preview.1",
+        project_segment(client),
+        encode_path_segment(&artifact_id)
+    );
+    let resp: PolicyEvaluationsResponse = client.get_json(&path).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&resp)?,
+        OutputFormat::Text => {
+            if resp.value.is_empty() {
+                println!("(no policies on PR #{})", args.id);
+                return Ok(());
+            }
+            for ev in &resp.value {
+                println!("{}", policy_text_line(ev));
+            }
+            println!("{}", policy_rollup_line(&resp.value));
+        }
+        OutputFormat::Table => {
+            if resp.value.is_empty() {
+                println!("(no policies on PR #{})", args.id);
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = resp.value.iter().map(policy_table_row).collect();
+            output::print_table(
+                &["Status", "Policy", "Blocking", "Started", "Completed"],
+                &rows,
+            );
+            println!("{}", policy_rollup_line(&resp.value));
+        }
+    }
+    Ok(())
+}
+
+fn policy_type_name(ev: &PolicyEvaluation) -> &str {
+    ev.configuration
+        .as_ref()
+        .and_then(|c| c.policy_type.as_ref())
+        .map(|t| t.display_name.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("(unknown)")
+}
+
+fn policy_is_blocking(ev: &PolicyEvaluation) -> bool {
+    ev.configuration
+        .as_ref()
+        .map(|c| c.is_blocking)
+        .unwrap_or(false)
+}
+
+fn policy_text_line(ev: &PolicyEvaluation) -> String {
+    let kind = if policy_is_blocking(ev) {
+        "blocking"
+    } else {
+        "advisory"
+    };
+    let duration = match (ev.started_date.as_deref(), ev.completed_date.as_deref()) {
+        (Some(s), Some(c)) => format!("  {s} → {c}"),
+        (Some(s), None) => format!("  started {s}"),
+        _ => String::new(),
+    };
+    format!(
+        "[{}] {} ({kind}){duration}",
+        ev.status,
+        policy_type_name(ev)
+    )
+}
+
+fn policy_table_row(ev: &PolicyEvaluation) -> Vec<String> {
+    vec![
+        ev.status.clone(),
+        policy_type_name(ev).to_string(),
+        if policy_is_blocking(ev) { "yes" } else { "no" }.to_string(),
+        ev.started_date.clone().unwrap_or_default(),
+        ev.completed_date.clone().unwrap_or_default(),
+    ]
+}
+
+fn policy_rollup_line(evals: &[PolicyEvaluation]) -> String {
+    let blocking: Vec<&PolicyEvaluation> = evals.iter().filter(|e| policy_is_blocking(e)).collect();
+    let approved = blocking
+        .iter()
+        .filter(|e| e.status.eq_ignore_ascii_case("approved"))
+        .count();
+    format!("{}/{} blocking policies passed", approved, blocking.len())
 }
 
 // ── create ──────────────────────────────────────────────────────────────────
@@ -960,6 +1198,249 @@ async fn open(args: OpenArgs, client: &AdoClient) -> Result<()> {
     let url = web_url(client, &repo, args.id);
     println!("Opening PR #{} in browser...", args.id);
     AdoClient::open_in_browser(&url)
+}
+
+// ── checkout / checkout-clean ───────────────────────────────────────────────
+
+async fn checkout(args: CheckoutArgs, client: &AdoClient) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let pr_path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
+        project_segment(client),
+        repo_segment(&repo),
+        args.id
+    );
+    let pr: serde_json::Value = client.get_json(&pr_path).await?;
+
+    if pr.get("forkSource").is_some_and(|v| !v.is_null()) {
+        bail!(
+            "PR #{} is from a forked repository; cross-fork checkout is not supported yet",
+            args.id
+        );
+    }
+
+    let source_ref = pr
+        .get("sourceRefName")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .with_context(|| format!("PR #{} response missing sourceRefName", args.id))?;
+    let source_branch = strip_refs_heads(source_ref);
+
+    let local_branch = match args.branch.as_deref() {
+        Some(b) => b.to_string(),
+        None => source_branch.to_string(),
+    };
+
+    let in_place = repo_from_remote()
+        .map(|r| r.eq_ignore_ascii_case(&repo))
+        .unwrap_or(false)
+        && args.dir.is_none();
+
+    if in_place {
+        let fetch_spec = if args.detach {
+            format!("refs/heads/{source_branch}")
+        } else {
+            format!("refs/heads/{source_branch}:{local_branch}")
+        };
+        run_git(None, &["fetch", "origin", &fetch_spec])
+            .with_context(|| format!("git fetch origin {fetch_spec} failed"))?;
+        if args.detach {
+            run_git(None, &["checkout", "--detach", "FETCH_HEAD"])
+                .context("git checkout --detach FETCH_HEAD failed")?;
+            println!(
+                "Checked out PR #{} ({}) in place (detached HEAD)",
+                args.id, source_branch
+            );
+        } else {
+            run_git(None, &["checkout", &local_branch])
+                .with_context(|| format!("git checkout {local_branch} failed"))?;
+            println!(
+                "Checked out PR #{} ({} -> {}) in place",
+                args.id, source_branch, local_branch
+            );
+        }
+        return Ok(());
+    }
+
+    // Mode B — fresh clone.
+    let dest = match args.dir.as_deref() {
+        Some(d) => PathBuf::from(d),
+        None => default_review_dir(&repo, args.id)?,
+    };
+
+    if dest.exists() {
+        let non_empty = std::fs::read_dir(&dest)
+            .with_context(|| format!("could not read {}", dest.display()))?
+            .next()
+            .is_some();
+        if non_empty {
+            bail!(
+                "destination {} already exists and is not empty — pass --dir <path> or run `ado pr checkout-clean {} --repo {}`",
+                dest.display(),
+                args.id,
+                repo
+            );
+        }
+    }
+
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("could not create {}", parent.display()))?;
+    }
+
+    let repo_info = lookup_repo(client, &client.project, &repo).await?;
+    let auth_url = inject_pat(&repo_info.remote_url, client.pat())?;
+
+    println!("Cloning {} into {}...", repo, dest.display());
+    let dest_str = dest_to_string(&dest)?;
+    run_git(None, &["clone", "--no-checkout", &auth_url, &dest_str]).context("git clone failed")?;
+
+    // Fetch the PR source branch BEFORE rewriting origin to the credential-free
+    // URL, so the fetch can reuse the cloned PAT-bearing remote.
+    let fetch_spec = if args.detach {
+        format!("refs/heads/{source_branch}")
+    } else {
+        format!("refs/heads/{source_branch}:{local_branch}")
+    };
+    run_git(Some(&dest), &["fetch", "origin", &fetch_spec])
+        .with_context(|| format!("git fetch origin {fetch_spec} failed"))?;
+
+    // Now strip the PAT from .git/config so it doesn't leak via `git remote -v`.
+    run_git(
+        Some(&dest),
+        &["remote", "set-url", "origin", &repo_info.remote_url],
+    )
+    .context("could not rewrite origin URL after clone")?;
+
+    if args.detach {
+        run_git(Some(&dest), &["checkout", "--detach", "FETCH_HEAD"])
+            .context("git checkout --detach FETCH_HEAD failed")?;
+        println!(
+            "Checked out PR #{} ({}) at {} (detached HEAD)",
+            args.id,
+            source_branch,
+            dest.display()
+        );
+    } else {
+        run_git(Some(&dest), &["checkout", &local_branch])
+            .with_context(|| format!("git checkout {local_branch} failed"))?;
+        println!(
+            "Checked out PR #{} ({}) at {}",
+            args.id,
+            source_branch,
+            dest.display()
+        );
+    }
+    Ok(())
+}
+
+async fn checkout_clean(args: CheckoutCleanArgs) -> Result<()> {
+    let reviews_root = reviews_root()?;
+    let canonical_root = reviews_root.canonicalize().ok();
+
+    if args.all {
+        if !reviews_root.exists() {
+            println!("(no review checkouts)");
+            return Ok(());
+        }
+        let mut found = false;
+        let entries = std::fs::read_dir(&reviews_root)
+            .with_context(|| format!("could not read {}", reviews_root.display()))?;
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            found = true;
+            if args.dry_run {
+                println!("would remove: {}", path.display());
+                continue;
+            }
+            if !path_is_under(&path, canonical_root.as_deref()) {
+                eprintln!(
+                    "warning: refusing to remove {} (not under {})",
+                    path.display(),
+                    reviews_root.display()
+                );
+                continue;
+            }
+            std::fs::remove_dir_all(&path)
+                .with_context(|| format!("could not remove {}", path.display()))?;
+            println!("removed: {}", path.display());
+        }
+        if !found {
+            println!("(no review checkouts)");
+        }
+        return Ok(());
+    }
+
+    let id = args
+        .id
+        .context("pass an ID or --all to ado pr checkout-clean")?;
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let path = reviews_root.join(format!("{repo}-pr-{id}"));
+
+    if !path.exists() {
+        println!("(no checkout for PR #{id})");
+        return Ok(());
+    }
+
+    if args.dry_run {
+        println!("would remove: {}", path.display());
+        return Ok(());
+    }
+
+    if !path_is_under(&path, canonical_root.as_deref()) {
+        bail!(
+            "refusing to remove {} (not under {})",
+            path.display(),
+            reviews_root.display()
+        );
+    }
+    std::fs::remove_dir_all(&path)
+        .with_context(|| format!("could not remove {}", path.display()))?;
+    println!("removed: {}", path.display());
+    Ok(())
+}
+
+fn reviews_root() -> Result<PathBuf> {
+    let home = dirs::home_dir().context("could not resolve $HOME")?;
+    Ok(home.join(".ado").join("reviews"))
+}
+
+fn default_review_dir(repo: &str, id: u32) -> Result<PathBuf> {
+    Ok(reviews_root()?.join(format!("{repo}-pr-{id}")))
+}
+
+fn dest_to_string(p: &Path) -> Result<String> {
+    p.to_str()
+        .map(String::from)
+        .with_context(|| format!("destination path is not valid UTF-8: {}", p.display()))
+}
+
+fn path_is_under(path: &Path, canonical_root: Option<&Path>) -> bool {
+    let Some(root) = canonical_root else {
+        // The reviews root doesn't exist (yet); nothing under it to remove anyway.
+        return false;
+    };
+    let canonical = match path.canonicalize() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    canonical.starts_with(root)
+}
+
+fn run_git(cwd: Option<&Path>, args: &[&str]) -> Result<()> {
+    let mut cmd = Command::new("git");
+    if let Some(dir) = cwd {
+        cmd.arg("-C").arg(dir);
+    }
+    cmd.args(args);
+    let status = cmd
+        .status()
+        .context("failed to invoke git — is it installed and on PATH?")?;
+    if !status.success() {
+        bail!("git {} exited with status {status}", args.join(" "));
+    }
+    Ok(())
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
