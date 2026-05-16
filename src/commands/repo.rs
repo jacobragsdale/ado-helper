@@ -470,7 +470,11 @@ async fn commits(args: CommitsArgs, client: &AdoClient, output: &OutputFormat) -
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-async fn lookup_repo(client: &AdoClient, project: &str, name_or_id: &str) -> Result<Repository> {
+pub(crate) async fn lookup_repo(
+    client: &AdoClient,
+    project: &str,
+    name_or_id: &str,
+) -> Result<Repository> {
     let path = format!(
         "{project}/_apis/git/repositories/{repo}?api-version=7.1",
         project = encode_path_segment(project),
@@ -745,7 +749,7 @@ fn resolve_repo_required(cli: Option<&str>) -> Result<String> {
 
 /// Take an ADO HTTPS clone URL and inject the PAT as `anything:<pat>@`.
 /// Strips any existing `user@` prefix so we don't end up with two userinfo blocks.
-fn inject_pat(remote_url: &str, pat: &str) -> Result<String> {
+pub(crate) fn inject_pat(remote_url: &str, pat: &str) -> Result<String> {
     let after_scheme = remote_url
         .strip_prefix("https://")
         .with_context(|| format!("repo clone URL is not HTTPS: {remote_url}"))?;

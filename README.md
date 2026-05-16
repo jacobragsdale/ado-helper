@@ -109,14 +109,21 @@ ado pr list --repo my-service --status active --output table
 ado pr view 42 --repo my-service
 ado pr update 42 --repo my-service --title "Add readiness check" --field draft=false
 ado pr link-work-item 42 --repo my-service --work-item 123
+ado pr checks 42 --repo my-service
 ado pr approve 42 --repo my-service --vote 10
 ado pr comment 42 --repo my-service --text "Looks good to me."
 ado pr threads 42 --repo my-service
 ado pr thread-reply 42 7 --repo my-service --text "Fixed in the latest push."
 ado pr thread-resolve 42 7 --repo my-service
+ado pr checkout 42 --repo my-service
+ado pr checkout-clean --all
 ado pr complete 42 --repo my-service --merge-strategy squash --delete-source-branch
 ado pr open 42 --repo my-service
 ```
+
+`ado pr checks` lists every branch-policy evaluation on a PR (build validation, required reviewers, comment resolution, status posts) and shows a `<approved>/<total>` rollup for blocking policies. `ado pr check` is an alias.
+
+`ado pr checkout` pulls a PR's source branch locally for review. When run inside a clone of the PR's repo it fetches and checks out in place; otherwise it clones the repo to `~/.ado/reviews/<repo>-pr-<id>` (override with `--dir`). Pass `--detach` for a detached HEAD or `--branch <name>` to rename the local branch. `ado pr checkout-clean <ID>` or `--all` removes review clones under `~/.ado/reviews`; `--dry-run` previews without removing. Forked PRs are not yet supported.
 
 PR status values are `active`, `completed`, `abandoned`, and `all`.
 
@@ -249,6 +256,9 @@ Useful help smoke checks:
 cargo run -- --help
 cargo run -- pr --help
 cargo run -- pr link-work-item --help
+cargo run -- pr checks --help
+cargo run -- pr checkout --help
+cargo run -- pr checkout-clean --help
 cargo run -- wi --help
 cargo run -- wi create --help
 cargo run -- wi query --help

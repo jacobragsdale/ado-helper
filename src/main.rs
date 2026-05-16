@@ -53,7 +53,7 @@ enum Commands {
 
     /// Manage pull requests
     #[command(
-        after_help = "Examples:\n  ado pr create --repo my-service --title \"Add health check\" --target main\n  ado pr list --repo my-service --status active\n  ado pr view 42 --repo my-service\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr complete 42 --repo my-service --delete-source-branch\n\nWhen --repo is omitted, ado uses ADO_REPO or the current git origin remote."
+        after_help = "Examples:\n  ado pr create --repo my-service --title \"Add health check\" --target main\n  ado pr list --repo my-service --status active\n  ado pr view 42 --repo my-service\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr checks 42 --repo my-service\n  ado pr checkout 42 --repo my-service\n  ado pr checkout-clean --all\n  ado pr complete 42 --repo my-service --delete-source-branch\n\nWhen --repo is omitted, ado uses ADO_REPO or the current git origin remote."
     )]
     Pr(pr::PrArgs),
 
