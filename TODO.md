@@ -1,90 +1,63 @@
-# Cleanup, Test, And Smoke-Test Plan
+Note: Mark checklist items as completed (`[x]`) when the feature is implemented, documented, and covered by appropriate tests or smoke checks.
 
-Goal: make the code easier to change, add focused low-cost tests, then run a real Azure DevOps smoke test against the configured project and validate every command path.
+# Feature Ideas
 
-## 4. Real ADO Smoke Test Setup
+- [ ] Add `ado pipeline logs`
+  - Fetch logs for a pipeline run using the Azure DevOps Pipelines Logs REST API.
+  - Support arguments for pipeline ID, run ID, and optional log ID. If no log ID is provided, list available logs for the run.
+  - Consider `--follow` for polling active runs and streaming new log output until completion.
+  - Preserve `--output json` for scriptable log metadata and use plain text for log content.
 
-- Use one disposable prefix for everything:
-  - `SMOKE_PREFIX=ado-helper-smoke-$(date +%Y%m%d-%H%M%S)`
-  - `SMOKE_REPO=$SMOKE_PREFIX-repo`
-  - `SMOKE_WI_TITLE="$SMOKE_PREFIX work item"`
-  - `SMOKE_BRANCH=$SMOKE_PREFIX-branch`
-- Build once with `cargo build`, then use `target/debug/ado` for every command.
-- Save command output to a local smoke log directory, for example `smoke/$SMOKE_PREFIX/`, with secrets redacted.
-- Record IDs as they are created:
-  - repo name and clone path
-  - work item IDs
-  - comment IDs
-  - PR ID
-  - PR thread ID
-  - pipeline ID and run ID, if a safe pipeline is available
-- Before mutating anything, run read-only checks:
-  - `ado config show`
-  - `ado repo list --output json`
-  - `ado pr list --status all --output json`
-  - `ado pipeline list --output json`
-  - `ado wi list --output json`
+- [ ] Add `ado pipeline runs`
+  - List recent runs for a pipeline using the Pipelines Runs REST API.
+  - Accept a pipeline name or ID, matching the existing `ado pipeline run` behavior.
+  - Include useful filters such as branch, state, result, and max count if the API supports them cleanly.
+  - Table/text output should show run ID, run name, branch, state, result, created date, and finished date.
 
-## 5. Smoke Test Matrix
+- [ ] Add `ado pipeline preview`
+  - Use the Pipelines Preview REST API to render the final YAML for a pipeline without starting a run.
+  - Accept pipeline name or ID, branch/ref, variables, and an optional YAML override file.
+  - Print final YAML in text mode and the full preview response in JSON mode.
+  - This should help debug templates, parameters, and variable expansion before queuing a real run.
 
-- Config:
-  - Validate `config show` against `.env`.
-  - Validate `config set` using a temporary config directory, not the user's real global config.
-- Repo:
-  - `repo list`
-  - `repo create --name $SMOKE_REPO`
-  - `repo clone $SMOKE_REPO <temp-dir>`
-  - `repo delete $SMOKE_REPO --yes` during cleanup.
-- Work items:
-  - `wi create --type Task --title "$SMOKE_WI_TITLE" --description ...`
-  - `wi list --search "$SMOKE_PREFIX"`
-  - `wi view <id>`
-  - `wi update <id> --state ... --tags "$SMOKE_PREFIX" --field priority=2`
-  - `wi comment <id> --text ...`
-  - `wi comments <id>`
-  - `wi comment-edit <id> <comment-id> --text ...`
-  - `wi comment-delete <id> <comment-id>`
-  - Create a second disposable work item, then validate `wi link`, `wi links`, and `wi link-rm`.
-  - `wi attach <id> <small-temp-file>`
-  - `wi history <id> --limit 10`
-  - `wi open <id>` only after confirming browser-launch side effects are acceptable, or after adding a print/dry-run URL path.
-  - `wi delete <id>` for all disposable work items.
-- PR:
-  - In the cloned smoke repo, push an initial commit to `main`, create `$SMOKE_BRANCH`, push a change, then run `pr create`.
-  - `pr list --repo $SMOKE_REPO --status active`
-  - `pr view <id> --repo $SMOKE_REPO`
-  - `pr update <id> --repo $SMOKE_REPO --title ... --field draft=false`
-  - `pr approve <id> --repo $SMOKE_REPO --vote 10`
-  - `pr comment <id> --repo $SMOKE_REPO --text ...`
-  - `pr threads <id> --repo $SMOKE_REPO`
-  - `pr thread-reply <id> <thread-id> --repo $SMOKE_REPO --text ...`
-  - `pr thread-resolve <id> <thread-id> --repo $SMOKE_REPO`
-  - `pr abandon <id> --repo $SMOKE_REPO`
-  - `pr reactivate <id> --repo $SMOKE_REPO`
-  - `pr complete <id> --repo $SMOKE_REPO --delete-source-branch`
-  - `pr open <id>` only after confirming browser-launch side effects are acceptable, or after adding a print/dry-run URL path.
-- Pipeline:
-  - `pipeline list`
-  - If the project has a known safe pipeline, run it on a safe branch:
-    - `pipeline run <pipeline-id-or-name> --branch <branch> --var ADO_HELPER_SMOKE=$SMOKE_PREFIX`
-    - `pipeline status <run-id> --pipeline-id <pipeline-id>`
-  - Avoid `--watch` unless a short-running safe pipeline is chosen.
+- [ ] Add `ado wi query`
+  - Run raw WIQL against the configured project using the Work Item Tracking WIQL REST API.
+  - Support inline queries with `--wiql` and file-based queries with `--file`.
+  - Fetch returned work item IDs in batches of up to 200, matching the current `wi list` pattern.
+  - Reuse existing work item table/text/json output where possible.
 
-## 6. Validation And Cleanup
+- [ ] Add work item metadata discovery commands
+  - Add commands such as `ado wi types`, `ado wi fields`, `ado wi areas`, and `ado wi iterations`.
+  - Use Work Item Tracking metadata APIs for work item types, fields, and classification nodes.
+  - Make output easy to copy into existing flags like `--type`, `--field`, `--area`, and `--iteration`.
+  - Include project override support where relevant.
 
-- For every command, validate both exit status and one concrete output fact:
-  - JSON parses where `--output json` is used.
-  - Created IDs can be viewed.
-  - Updated fields are visible after a follow-up read.
-  - Deleted comments/relations no longer appear.
-  - Completed or abandoned PR status matches the requested transition.
-- Cleanup must run even after partial failure:
-  - Delete disposable work items.
-  - Delete or complete disposable PRs.
-  - Delete the disposable repo.
-  - Remove temp clone and attachment files.
-- End with:
-  - `cargo fmt --check`
-  - `cargo clippy --all-targets -- -D warnings`
-  - `cargo test`
-  - A short smoke report listing commands passed, skipped, failed, and any ADO cleanup leftovers.
+- [ ] Add `ado pr checks` or `ado pr policy`
+  - Show pull request statuses, policy results, and branch policy requirements for a PR.
+  - Use Pull Request Statuses and Policy Configurations REST APIs where possible.
+  - Include status state, context/name, description, creator, updated date, and target URL.
+  - This should answer why a PR can or cannot be completed without opening the browser.
+
+- [ ] Add `ado pr checkout`
+  - Fetch and checkout a pull request source branch locally.
+  - Resolve the PR through the existing PR view logic, then use Git commands to fetch the source ref.
+  - Support a default local branch name and an override such as `--branch`.
+  - Keep behavior clear when the target branch already exists locally.
+
+- [ ] Add repository branch, tag, and commit commands
+  - Add commands such as `ado repo branches`, `ado repo tags`, and `ado repo commits`.
+  - Use Git Refs and Commits REST APIs from Azure DevOps 7.1.
+  - Support repo name inference from `ADO_REPO` or the current git remote where consistent with PR commands.
+  - Table output should show names, object IDs, authors, dates, and comments where applicable.
+
+- [ ] Add board/sprint helper commands
+  - Add commands such as `ado board current`, `ado sprint`, or `ado backlog`.
+  - Use Work APIs for team iterations, boards, and backlogs.
+  - Support team selection with `--team`, defaulting to the project team when possible.
+  - Focus on high-value summaries: current iteration, assigned work, backlog items, and item states.
+
+- [ ] Add organization/project/team discovery commands
+  - Add commands such as `ado project list`, `ado team list`, `ado team members`, and `ado me`.
+  - Use Core Teams/Projects APIs and identity APIs where appropriate.
+  - Help users discover valid project/team names and resolve people for reviewers or work item assignment.
+  - Consider whether discovered defaults should integrate with `ado config set`.

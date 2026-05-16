@@ -13,7 +13,13 @@ use config::Config;
 
 /// Azure DevOps CLI — manage repos, PRs, pipelines, and work items
 #[derive(Parser)]
-#[command(name = "ado", version, about, long_about = None)]
+#[command(
+    name = "ado",
+    version,
+    about = "Manage Azure DevOps repos, PRs, pipelines, and work items",
+    long_about = "ado is a small Azure DevOps CLI for day-to-day project work: list and clone repos, create and review pull requests, run pipelines, and manage work items.\n\nFirst run:\n  1. Create a Personal Access Token in Azure DevOps.\n  2. Set ADO_PAT in your shell or a local .env file.\n  3. Set ADO_ORG_URL and ADO_PROJECT in .env, or save them with ado config set.\n\nConfiguration precedence:\n  CLI flags (--org, --project) override environment variables loaded from .env, which override the saved TOML config.",
+    after_help = "Examples:\n  ado config set --org https://dev.azure.com/myorg --project MyProject\n  ado repo list --output table\n  ado pr list --repo my-service --status active\n  ado wi create --title \"Fix login redirect\" --type Bug --assigned-to me\n  ado pipeline run build-main --branch main\n\nUse `ado help <command>` or `ado <command> --help` for workflow-specific examples."
+)]
 struct Cli {
     /// Override the organization URL from config (e.g. https://dev.azure.com/myorg)
     #[arg(long, global = true)]
@@ -34,19 +40,34 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Manage configuration (org URL, default project)
+    #[command(
+        after_help = "Examples:\n  ado config set --org https://dev.azure.com/myorg --project MyProject\n  ado config show\n\nADO_PAT is intentionally not stored in config; set it in your shell or .env."
+    )]
     Config(config::ConfigArgs),
 
     /// Manage Git repositories
+    #[command(
+        after_help = "Examples:\n  ado repo list --output table\n  ado repo create --name my-service\n  ado repo clone my-service\n  ado repo delete old-service --yes\n\nRepo deletion is permanent in Azure DevOps."
+    )]
     Repo(repo::RepoArgs),
 
     /// Manage pull requests
+    #[command(
+        after_help = "Examples:\n  ado pr create --repo my-service --title \"Add health check\" --target main\n  ado pr list --repo my-service --status active\n  ado pr view 42 --repo my-service\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr complete 42 --repo my-service --delete-source-branch\n\nWhen --repo is omitted, ado uses ADO_REPO or the current git origin remote."
+    )]
     Pr(pr::PrArgs),
 
     /// Manage pipelines
+    #[command(
+        after_help = "Examples:\n  ado pipeline list --output table\n  ado pipeline run build-main --branch main --var smoke=true\n  ado pipeline status 12345 --pipeline-id 67 --watch"
+    )]
     Pipeline(pipeline::PipelineArgs),
 
     /// Manage work items (alias: wi)
-    #[command(alias = "wi")]
+    #[command(
+        visible_alias = "wi",
+        after_help = "Examples:\n  ado wi create --title \"Fix login redirect\" --type Bug --assigned-to me\n  ado wi list --assigned-to me --state Active\n  ado wi update 123 --state Closed --field priority=2\n  ado wi link 123 --child 456\n  ado wi attach 123 ./screenshot.png\n\nUse field aliases like title, state, assigned-to, tags, priority, story-points, and acceptance-criteria with --field."
+    )]
     WorkItem(workitem::WorkItemArgs),
 }
 

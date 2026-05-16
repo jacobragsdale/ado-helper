@@ -8,6 +8,9 @@ use crate::client::{AdoClient, encode_path_segment};
 use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
+#[command(
+    after_help = "Examples:\n  ado repo list --output table\n  ado repo create --name my-service\n  ado repo clone my-service ./my-service\n  ado repo delete old-service --yes\n\nClone uses ADO_PAT for authentication and rewrites origin to the credential-free URL unless --keep-pat-in-remote is passed."
+)]
 pub struct RepoArgs {
     #[command(subcommand)]
     pub command: RepoCommand,
@@ -16,51 +19,66 @@ pub struct RepoArgs {
 #[derive(Subcommand)]
 pub enum RepoCommand {
     /// Create a new Git repository in the project
+    #[command(
+        after_help = "Examples:\n  ado repo create --name my-service\n  ado repo create --name my-service --project OtherProject"
+    )]
     Create(CreateArgs),
 
     /// List all repositories in the project
+    #[command(
+        visible_alias = "ls",
+        after_help = "Examples:\n  ado repo list\n  ado repo ls --output table\n  ado repo list --project OtherProject --output json"
+    )]
     List(ListArgs),
 
     /// Clone a repository to the current directory (uses ADO_PAT for auth)
+    #[command(
+        after_help = "Examples:\n  ado repo clone my-service\n  ado repo clone my-service ../work/my-service\n  ado repo clone my-service --keep-pat-in-remote\n\nBy default, origin is rewritten after clone so the PAT is not left in .git/config."
+    )]
     Clone(CloneArgs),
 
     /// Delete a repository (permanent — there is no recycle bin)
-    #[command(alias = "rm")]
+    #[command(
+        visible_alias = "rm",
+        after_help = "Examples:\n  ado repo delete old-service --yes\n  ado repo rm old-service --yes\n\nThis permanently deletes the repository in Azure DevOps."
+    )]
     Delete(DeleteArgs),
 }
 
 #[derive(Args)]
 pub struct CreateArgs {
     /// Name of the new repository
-    #[arg(long)]
+    #[arg(long, value_name = "NAME")]
     pub name: String,
 
     /// Project to create the repo in (defaults to configured project)
-    #[arg(long)]
+    #[arg(long, value_name = "PROJECT")]
     pub project: Option<String>,
 
     /// Default branch name
-    #[arg(long, default_value = "main")]
+    #[arg(long, value_name = "BRANCH", default_value = "main")]
     pub default_branch: String,
 }
 
 #[derive(Args)]
 pub struct ListArgs {
     /// Project to list repos in (defaults to configured project)
-    #[arg(long)]
+    #[arg(long, value_name = "PROJECT")]
     pub project: Option<String>,
 }
 
 #[derive(Args)]
 pub struct CloneArgs {
     /// Name of the repository to clone
+    #[arg(value_name = "NAME")]
     pub name: String,
 
     /// Destination directory (defaults to ./<name>)
+    #[arg(value_name = "DEST", value_hint = clap::ValueHint::DirPath)]
     pub dest: Option<String>,
 
     /// Project the repo belongs to (defaults to configured project)
-    #[arg(long)]
+    #[arg(long, value_name = "PROJECT")]
     pub project: Option<String>,
 
     /// Leave the PAT baked into the cloned remote URL (useful for CI). By
@@ -72,6 +90,7 @@ pub struct CloneArgs {
 #[derive(Args)]
 pub struct DeleteArgs {
     /// Name (or ID) of the repository to delete
+    #[arg(value_name = "NAME_OR_ID")]
     pub name: String,
 
     /// Required confirmation — this is permanent
@@ -79,7 +98,7 @@ pub struct DeleteArgs {
     pub yes: bool,
 
     /// Project the repo belongs to (defaults to configured project)
-    #[arg(long)]
+    #[arg(long, value_name = "PROJECT")]
     pub project: Option<String>,
 }
 

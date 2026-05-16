@@ -16,47 +16,47 @@ use super::types::PatchOp;
 #[derive(Args, Default, Debug)]
 pub struct FieldFlags {
     /// Title (System.Title)
-    #[arg(long)]
+    #[arg(long, value_name = "TEXT")]
     pub title: Option<String>,
 
     /// State (System.State) — e.g. "To Do", "Doing", "Done", "Active", "Closed"
-    #[arg(long)]
+    #[arg(long, value_name = "STATE")]
     pub state: Option<String>,
 
     /// Reassign to user (use "me" for yourself, "" to unassign)
-    #[arg(long)]
+    #[arg(long, value_name = "USER")]
     pub assigned_to: Option<String>,
 
     /// Description (System.Description) — HTML allowed
-    #[arg(long)]
+    #[arg(long, value_name = "HTML")]
     pub description: Option<String>,
 
     /// Iteration path
-    #[arg(long)]
+    #[arg(long, value_name = "PATH")]
     pub iteration: Option<String>,
 
     /// Area path
-    #[arg(long)]
+    #[arg(long, value_name = "PATH")]
     pub area: Option<String>,
 
     /// Tags — semicolon-separated, e.g. "ux;blocker;p0"
-    #[arg(long)]
+    #[arg(long, value_name = "TAGS")]
     pub tags: Option<String>,
 
     /// Priority (1–4)
-    #[arg(long)]
+    #[arg(long, value_name = "N")]
     pub priority: Option<String>,
 
     /// Severity (Bug)
-    #[arg(long)]
+    #[arg(long, value_name = "SEVERITY")]
     pub severity: Option<String>,
 
     /// Story Points
-    #[arg(long)]
+    #[arg(long, value_name = "POINTS")]
     pub story_points: Option<String>,
 
     /// Acceptance Criteria — HTML allowed
-    #[arg(long)]
+    #[arg(long, value_name = "HTML")]
     pub acceptance_criteria: Option<String>,
 
     /// Generic field set, repeatable. Use either short alias or full ADO name.

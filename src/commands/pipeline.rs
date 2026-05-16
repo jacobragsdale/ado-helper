@@ -9,6 +9,9 @@ use crate::fields::split_field_arg;
 use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
+#[command(
+    after_help = "Examples:\n  ado pipeline list --output table\n  ado pipeline run build-main --branch main --var smoke=true\n  ado pipeline status 12345 --pipeline-id 67\n  ado pipeline status 12345 --pipeline-id 67 --watch"
+)]
 pub struct PipelineArgs {
     #[command(subcommand)]
     pub command: PipelineCommand,
@@ -17,29 +20,40 @@ pub struct PipelineArgs {
 #[derive(Subcommand)]
 pub enum PipelineCommand {
     /// List all pipelines in the project
+    #[command(
+        visible_alias = "ls",
+        after_help = "Examples:\n  ado pipeline list\n  ado pipeline ls --output table\n  ado pipeline list --project OtherProject --output json"
+    )]
     List(ListArgs),
 
     /// Trigger a pipeline run
+    #[command(
+        after_help = "Examples:\n  ado pipeline run build-main --branch main\n  ado pipeline run 67 --branch feature/login --var environment=dev --var smoke=true\n\nThe pipeline argument accepts either a numeric pipeline ID or an exact pipeline name."
+    )]
     Run(RunArgs),
 
     /// Get the status of a pipeline run
+    #[command(
+        after_help = "Examples:\n  ado pipeline status 12345 --pipeline-id 67\n  ado pipeline status 12345 --pipeline-id 67 --watch\n\nUse the pipeline ID shown by `ado pipeline list` or printed after `ado pipeline run`."
+    )]
     Status(StatusArgs),
 }
 
 #[derive(Args)]
 pub struct ListArgs {
     /// Project (defaults to configured project)
-    #[arg(long)]
+    #[arg(long, value_name = "PROJECT")]
     pub project: Option<String>,
 }
 
 #[derive(Args)]
 pub struct RunArgs {
     /// Pipeline name or numeric ID
+    #[arg(value_name = "PIPELINE")]
     pub pipeline: String,
 
     /// Branch to run the pipeline on
-    #[arg(long, default_value = "main")]
+    #[arg(long, value_name = "BRANCH", default_value = "main")]
     pub branch: String,
 
     /// Pipeline variables in key=value format (repeatable)
@@ -47,17 +61,18 @@ pub struct RunArgs {
     pub variables: Vec<String>,
 
     /// Project (defaults to configured project)
-    #[arg(long)]
+    #[arg(long, value_name = "PROJECT")]
     pub project: Option<String>,
 }
 
 #[derive(Args)]
 pub struct StatusArgs {
     /// Run ID returned by `ado pipeline run`
+    #[arg(value_name = "RUN_ID")]
     pub run_id: u32,
 
     /// Pipeline ID (required to look up a specific run)
-    #[arg(long)]
+    #[arg(long, value_name = "PIPELINE_ID")]
     pub pipeline_id: u32,
 
     /// Poll every 10 seconds until the run finishes
@@ -65,7 +80,7 @@ pub struct StatusArgs {
     pub watch: bool,
 
     /// Project (defaults to configured project)
-    #[arg(long)]
+    #[arg(long, value_name = "PROJECT")]
     pub project: Option<String>,
 }
 
