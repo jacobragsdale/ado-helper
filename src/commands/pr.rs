@@ -1,6 +1,12 @@
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::process::Command;
+
+use crate::client::AdoClient;
+use crate::fields::{coerce_value, split_field_arg};
+use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
 pub struct PrArgs {
@@ -19,11 +25,20 @@ pub enum PrCommand {
     /// View details of a pull request
     View(ViewArgs),
 
-    /// Approve a pull request (vote = 10)
+    /// Edit title / description / arbitrary fields on a pull request
+    Update(UpdateArgs),
+
+    /// Approve a pull request (vote = 10, configurable via --vote)
     Approve(ApproveArgs),
 
     /// Complete (merge) a pull request
     Complete(CompleteArgs),
+
+    /// Abandon a pull request (close without merging)
+    Abandon(AbandonArgs),
+
+    /// Reactivate an abandoned pull request
+    Reactivate(ReactivateArgs),
 
     /// Open a pull request in the browser
     Open(OpenArgs),
@@ -55,18 +70,22 @@ pub struct CreateArgs {
     #[arg(long, value_delimiter = ',')]
     pub reviewers: Vec<String>,
 
-    /// Repository name (defaults to repo of current directory)
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
     #[arg(long)]
     pub repo: Option<String>,
+
+    /// Generic field set, repeatable. e.g. --field isDraft=false
+    #[arg(long, value_name = "NAME=VALUE")]
+    pub field: Vec<String>,
 }
 
 #[derive(Args)]
 pub struct ListArgs {
-    /// Filter by status
+    /// Filter by status (active, completed, abandoned, all)
     #[arg(long, default_value = "active")]
     pub status: String,
 
-    /// Repository name (defaults to repo of current directory)
+    /// Repository name (omit to list across the whole project)
     #[arg(long)]
     pub repo: Option<String>,
 }
@@ -76,7 +95,30 @@ pub struct ViewArgs {
     /// Pull request ID
     pub id: u32,
 
-    /// Repository name
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
+    #[arg(long)]
+    pub repo: Option<String>,
+}
+
+#[derive(Args)]
+pub struct UpdateArgs {
+    /// Pull request ID
+    pub id: u32,
+
+    /// New title
+    #[arg(long)]
+    pub title: Option<String>,
+
+    /// New description
+    #[arg(long)]
+    pub description: Option<String>,
+
+    /// Generic field set, repeatable. Use either short alias or full ADO key.
+    /// Examples: --field draft=false  --field status=active  --field autoCompleteSetBy=<id>
+    #[arg(long, value_name = "NAME=VALUE")]
+    pub field: Vec<String>,
+
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
     #[arg(long)]
     pub repo: Option<String>,
 }
@@ -86,7 +128,11 @@ pub struct ApproveArgs {
     /// Pull request ID
     pub id: u32,
 
-    /// Repository name
+    /// Vote value: 10=approve, 5=approve with suggestions, 0=no vote, -5=waiting, -10=reject
+    #[arg(long, default_value_t = 10, allow_hyphen_values = true)]
+    pub vote: i32,
+
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
     #[arg(long)]
     pub repo: Option<String>,
 }
@@ -100,11 +146,31 @@ pub struct CompleteArgs {
     #[arg(long)]
     pub delete_source_branch: bool,
 
-    /// Merge strategy
+    /// Merge strategy: noFastForward | squash | rebase | rebaseMerge
     #[arg(long, default_value = "squash")]
     pub merge_strategy: String,
 
-    /// Repository name
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
+    #[arg(long)]
+    pub repo: Option<String>,
+}
+
+#[derive(Args)]
+pub struct AbandonArgs {
+    /// Pull request ID
+    pub id: u32,
+
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
+    #[arg(long)]
+    pub repo: Option<String>,
+}
+
+#[derive(Args)]
+pub struct ReactivateArgs {
+    /// Pull request ID
+    pub id: u32,
+
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
     #[arg(long)]
     pub repo: Option<String>,
 }
@@ -114,7 +180,7 @@ pub struct OpenArgs {
     /// Pull request ID
     pub id: u32,
 
-    /// Repository name
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
     #[arg(long)]
     pub repo: Option<String>,
 }
@@ -138,13 +204,16 @@ pub struct PullRequest {
     #[serde(rename = "targetRefName")]
     pub target_ref: String,
 
-    #[serde(rename = "isDraft")]
+    #[serde(default, rename = "isDraft")]
     pub is_draft: bool,
 
-    #[serde(rename = "mergeStatus")]
+    #[serde(default, rename = "mergeStatus")]
     pub merge_status: Option<String>,
 
     pub url: String,
+
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -152,8 +221,11 @@ pub struct IdentityRef {
     #[serde(rename = "displayName")]
     pub display_name: String,
 
-    #[serde(rename = "uniqueName")]
+    #[serde(default, rename = "uniqueName")]
     pub unique_name: String,
+
+    #[serde(default)]
+    pub id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -162,162 +234,443 @@ pub struct PrListResponse {
     pub count: u32,
 }
 
-// ── Command handlers ──────────────────────────────────────────────────────────
+#[derive(Debug, Deserialize)]
+struct IdentitiesResponse {
+    value: Vec<IdentityRef>,
+}
 
-pub async fn run(args: PrArgs) -> Result<()> {
+// ── Command dispatch ─────────────────────────────────────────────────────────
+
+pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     match args.command {
-        PrCommand::Create(a) => create(a).await,
-        PrCommand::List(a) => list(a).await,
-        PrCommand::View(a) => view(a).await,
-        PrCommand::Approve(a) => approve(a).await,
-        PrCommand::Complete(a) => complete(a).await,
-        PrCommand::Open(a) => open(a).await,
+        PrCommand::Create(a) => create(a, client, output).await,
+        PrCommand::List(a) => list(a, client, output).await,
+        PrCommand::View(a) => view(a, client, output).await,
+        PrCommand::Update(a) => update(a, client, output).await,
+        PrCommand::Approve(a) => approve(a, client).await,
+        PrCommand::Complete(a) => complete(a, client, output).await,
+        PrCommand::Abandon(a) => abandon(a, client).await,
+        PrCommand::Reactivate(a) => reactivate(a, client).await,
+        PrCommand::Open(a) => open(a, client).await,
     }
 }
 
-/*
- * IMPLEMENTATION NOTES — create()
- *
- * Endpoint: POST {org}/{project}/_apis/git/repositories/{repo}/pullrequests?api-version=7.1
- *
- * Request body:
- *   {
- *     "title": "<args.title>",
- *     "description": "<args.description or empty string>",
- *     "sourceRefName": "refs/heads/<args.source>",
- *     "targetRefName": "refs/heads/<args.target>",
- *     "isDraft": <args.draft>,
- *     "reviewers": [{ "id": "<reviewer-id>" }, ...]
- *   }
- *
- * Determining the source branch when --source is not provided:
- *   Run `git rev-parse --abbrev-ref HEAD` and capture its stdout.
- *   If the command fails (not in a git repo), return an error asking the user
- *   to specify --source explicitly.
- *
- * Resolving reviewer IDs:
- *   ADO requires UUIDs for reviewers, not display names. Use the Identities API:
- *   GET {org}/_apis/identities?searchFilter=General&filterValue=<name>&api-version=6.0
- *   Extract the first match's `id` field. If no match, warn and skip that reviewer.
- *
- * Determining the repo when --repo is not provided:
- *   Run `git remote get-url origin` and parse the repo name from the URL.
- *   ADO remote URLs follow the pattern:
- *     https://org@dev.azure.com/org/project/_git/repo-name
- *   The last path segment is the repo name.
- *
- * On success, print: "Created PR #{id}: <title>"
- * Also print the web URL so the user can click to open it.
- */
-async fn create(args: CreateArgs) -> Result<()> {
-    todo!("POST pullrequests, resolve source branch from git if not provided")
+// ── list ────────────────────────────────────────────────────────────────────
+
+async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let repo = resolve_repo_optional(args.repo.as_deref());
+    let status = &args.status;
+    let path = match &repo {
+        Some(r) => format!(
+            "{}/_apis/git/repositories/{}/pullrequests?searchCriteria.status={}&api-version=7.1",
+            client.project, r, status
+        ),
+        None => format!(
+            "{}/_apis/git/pullrequests?searchCriteria.status={}&api-version=7.1",
+            client.project, status
+        ),
+    };
+
+    let resp: PrListResponse = client.get_json(&path).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&resp)?,
+        OutputFormat::Text => {
+            if resp.value.is_empty() {
+                let scope = repo.as_deref().unwrap_or(&client.project);
+                println!("(no {} PRs in {scope})", status);
+                return Ok(());
+            }
+            let lines: Vec<String> = resp.value.iter().map(|p| {
+                let src = strip_refs_heads(&p.source_ref);
+                let tgt = strip_refs_heads(&p.target_ref);
+                let draft = if p.is_draft { " [draft]" } else { "" };
+                format!(
+                    "#{:<5} [{}]{} {}  ({src} -> {tgt})  by {}",
+                    p.id, p.status, draft, p.title, p.created_by.display_name
+                )
+            }).collect();
+            output::print_text(&lines);
+        }
+        OutputFormat::Table => {
+            if resp.value.is_empty() {
+                let scope = repo.as_deref().unwrap_or(&client.project);
+                println!("(no {} PRs in {scope})", status);
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = resp.value.iter().map(|p| {
+                let title = if p.is_draft {
+                    format!("{} [draft]", p.title)
+                } else {
+                    p.title.clone()
+                };
+                vec![
+                    format!("#{}", p.id),
+                    p.status.clone(),
+                    title,
+                    strip_refs_heads(&p.source_ref).to_string(),
+                    strip_refs_heads(&p.target_ref).to_string(),
+                    p.created_by.display_name.clone(),
+                ]
+            }).collect();
+            output::print_table(
+                &["ID", "Status", "Title", "Source", "Target", "Author"],
+                &rows,
+            );
+        }
+    }
+    Ok(())
 }
 
-/*
- * IMPLEMENTATION NOTES — list()
- *
- * Endpoint: GET {org}/{project}/_apis/git/repositories/{repo}/pullrequests
- *           ?searchCriteria.status={active|completed|abandoned|all}
- *           &api-version=7.1
- *
- * If --repo is not provided, try to infer it from `git remote get-url origin`
- * (same parsing as create()). If not in a git repo, list across all repos using
- * the project-level endpoint:
- *   GET {org}/{project}/_apis/git/pullrequests?searchCriteria.status={status}&api-version=7.1
- *
- * Plain text output format per PR (one line each):
- *   #{id}  [{status}]  <title>  (<sourceRef> -> <targetRef>)  by <createdBy.displayName>
- *
- * With --output json, print the full PrListResponse.
- */
-async fn list(args: ListArgs) -> Result<()> {
-    todo!("GET pullrequests with status filter, print one line per PR")
+// ── view ────────────────────────────────────────────────────────────────────
+
+async fn view(args: ViewArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
+        client.project, repo, args.id
+    );
+    let pr: PullRequest = client.get_json(&path).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&pr)?,
+        OutputFormat::Text | OutputFormat::Table => {
+            println!("PR #{}: {}", pr.id, pr.title);
+            println!("Status:   {}", pr.status);
+            println!(
+                "Author:   {} ({})",
+                pr.created_by.display_name, pr.created_by.unique_name
+            );
+            println!("Source:   {}", strip_refs_heads(&pr.source_ref));
+            println!("Target:   {}", strip_refs_heads(&pr.target_ref));
+            println!("Draft:    {}", if pr.is_draft { "yes" } else { "no" });
+            if let Some(ms) = &pr.merge_status {
+                println!("Merge:    {ms}");
+            }
+            if let Some(desc) = &pr.description {
+                if !desc.is_empty() {
+                    println!("Body:     {desc}");
+                }
+            }
+            println!("URL:      {}", web_url(client, &repo, pr.id));
+        }
+    }
+    Ok(())
 }
 
-/*
- * IMPLEMENTATION NOTES — view()
- *
- * Endpoint: GET {org}/{project}/_apis/git/repositories/{repo}/pullrequests/{id}?api-version=7.1
- *
- * If --repo is not provided, infer from `git remote get-url origin`.
- *
- * Plain text output (multi-line):
- *   PR #<id>: <title>
- *   Status:   <status>
- *   Author:   <createdBy.displayName> (<createdBy.uniqueName>)
- *   Source:   <sourceRefName stripped of refs/heads/>
- *   Target:   <targetRefName stripped of refs/heads/>
- *   Draft:    yes/no
- *   URL:      <webUrl>
- *
- * With --output json, print the full PullRequest object.
- */
-async fn view(args: ViewArgs) -> Result<()> {
-    todo!("GET pullrequest by ID and print details")
+// ── create ──────────────────────────────────────────────────────────────────
+
+async fn create(args: CreateArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let source = match args.source {
+        Some(s) => s,
+        None => current_branch().context("could not detect source branch — pass --source")?,
+    };
+
+    let mut body = json!({
+        "title": args.title,
+        "description": args.description.unwrap_or_default(),
+        "sourceRefName": format!("refs/heads/{}", source),
+        "targetRefName": format!("refs/heads/{}", args.target),
+        "isDraft": args.draft,
+    });
+
+    // Resolve reviewer names → identity IDs. Skip (with a warning) on no match
+    // so a typo in one name doesn't block PR creation.
+    if !args.reviewers.is_empty() {
+        let mut resolved = Vec::with_capacity(args.reviewers.len());
+        for name in &args.reviewers {
+            match resolve_identity(client, name).await {
+                Ok(id) => resolved.push(json!({ "id": id })),
+                Err(e) => eprintln!("warning: skipping reviewer '{name}': {e}"),
+            }
+        }
+        if !resolved.is_empty() {
+            body["reviewers"] = serde_json::Value::Array(resolved);
+        }
+    }
+
+    // Apply --field overrides last so they win.
+    apply_fields(&mut body, &args.field)?;
+
+    let path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests?api-version=7.1",
+        client.project, repo
+    );
+    let pr: PullRequest = client.post_json(&path, &body).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&pr)?,
+        OutputFormat::Text | OutputFormat::Table => {
+            println!("Created PR #{}: {}", pr.id, pr.title);
+            println!("URL: {}", web_url(client, &repo, pr.id));
+        }
+    }
+    Ok(())
 }
 
-/*
- * IMPLEMENTATION NOTES — approve()
- *
- * Approving requires knowing the current user's identity ID, then casting a vote.
- *
- * Step 1 — Get current user ID:
- *   GET {org}/_apis/connectionData?api-version=5.0
- *   Extract authenticatedUser.id from the response. This is the reviewer UUID
- *   we need to vote as.
- *
- * Step 2 — Submit vote:
- *   PUT {org}/{project}/_apis/git/repositories/{repo}/pullrequests/{pr-id}/reviewers/{user-id}
- *       ?api-version=7.1
- *   Body: { "vote": 10 }
- *   Vote values: 10 = approved, 5 = approved with suggestions,
- *                0 = no vote, -5 = waiting for author, -10 = rejected
- *
- * On success, print: "Approved PR #{id}"
- */
-async fn approve(args: ApproveArgs) -> Result<()> {
-    todo!("get current user ID then PUT vote=10 on the PR")
+// ── update ──────────────────────────────────────────────────────────────────
+
+async fn update(args: UpdateArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let mut body = serde_json::Map::new();
+
+    if let Some(t) = args.title {
+        body.insert("title".into(), json!(t));
+    }
+    if let Some(d) = args.description {
+        body.insert("description".into(), json!(d));
+    }
+    let mut value = serde_json::Value::Object(body);
+    apply_fields(&mut value, &args.field)?;
+
+    if value.as_object().map(|m| m.is_empty()).unwrap_or(true) {
+        println!("Nothing to update.");
+        return Ok(());
+    }
+
+    let path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
+        client.project, repo, args.id
+    );
+    let pr: PullRequest = patch_json(client, &path, &value).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&pr)?,
+        OutputFormat::Text | OutputFormat::Table => println!("Updated PR #{}", pr.id),
+    }
+    Ok(())
 }
 
-/*
- * IMPLEMENTATION NOTES — complete()
- *
- * Endpoint: PATCH {org}/{project}/_apis/git/repositories/{repo}/pullrequests/{id}?api-version=7.1
- *
- * Request body:
- *   {
- *     "status": "completed",
- *     "completionOptions": {
- *       "deleteSourceBranch": <args.delete_source_branch>,
- *       "mergeStrategy": "<args.merge_strategy>"
- *         // valid values: "noFastForward", "squash", "rebase", "rebaseMerge"
- *     }
- *   }
- *
- * On success, print: "Completed PR #{id}"
- *
- * Note: The PR must be in an "active" state and all required policies must be
- * satisfied; otherwise ADO returns 400. The check_response helper will surface
- * the error message from ADO.
- */
-async fn complete(args: CompleteArgs) -> Result<()> {
-    todo!("PATCH pullrequest with status=completed and merge options")
+// ── approve ─────────────────────────────────────────────────────────────────
+
+async fn approve(args: ApproveArgs, client: &AdoClient) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let user_id = self_identity_id(client).await?;
+    let path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests/{}/reviewers/{}?api-version=7.1",
+        client.project, repo, args.id, user_id
+    );
+    let resp = client
+        .put(&path) // helper added below
+        .header("Content-Type", "application/json")
+        .json(&json!({ "vote": args.vote }))
+        .send()
+        .await?;
+    AdoClient::check_response(resp).await?;
+
+    let action = match args.vote {
+        v if v >= 10 => "Approved",
+        v if v >= 5 => "Approved (with suggestions)",
+        v if v == 0 => "Reset vote on",
+        v if v >= -5 => "Marked waiting on",
+        _ => "Rejected",
+    };
+    println!("{action} PR #{} (vote={})", args.id, args.vote);
+    Ok(())
 }
 
-/*
- * IMPLEMENTATION NOTES — open()
- *
- * Build the browser URL:
- *   https://dev.azure.com/{org-name}/{project}/_git/{repo}/pullrequest/{id}
- *
- * Note: org-name is the last path segment of the org URL
- *   (strip "https://dev.azure.com/" from config.org).
- *
- * If --repo is not provided, infer from `git remote get-url origin`.
- *
- * Then call client::AdoClient::open_in_browser(&url).
- * Print: "Opening PR #{id} in browser..."
- */
-async fn open(args: OpenArgs) -> Result<()> {
-    todo!("construct PR web URL and open in browser via cmd /c start")
+// ── complete / abandon / reactivate ─────────────────────────────────────────
+
+async fn complete(args: CompleteArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let body = json!({
+        "status": "completed",
+        "completionOptions": {
+            "deleteSourceBranch": args.delete_source_branch,
+            "mergeStrategy": args.merge_strategy,
+        }
+    });
+    let path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
+        client.project, repo, args.id
+    );
+    let pr: PullRequest = patch_json(client, &path, &body).await?;
+    match output {
+        OutputFormat::Json => output::print_json(&pr)?,
+        OutputFormat::Text | OutputFormat::Table => {
+            println!("Completed PR #{} ({})", pr.id, args.merge_strategy)
+        }
+    }
+    Ok(())
+}
+
+async fn abandon(args: AbandonArgs, client: &AdoClient) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
+        client.project, repo, args.id
+    );
+    let _: PullRequest = patch_json(client, &path, &json!({ "status": "abandoned" })).await?;
+    println!("Abandoned PR #{}", args.id);
+    Ok(())
+}
+
+async fn reactivate(args: ReactivateArgs, client: &AdoClient) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
+        client.project, repo, args.id
+    );
+    let _: PullRequest = patch_json(client, &path, &json!({ "status": "active" })).await?;
+    println!("Reactivated PR #{}", args.id);
+    Ok(())
+}
+
+// ── open ────────────────────────────────────────────────────────────────────
+
+async fn open(args: OpenArgs, client: &AdoClient) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let url = web_url(client, &repo, args.id);
+    println!("Opening PR #{} in browser...", args.id);
+    AdoClient::open_in_browser(&url)
+}
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+fn web_url(client: &AdoClient, repo: &str, pr_id: u32) -> String {
+    format!(
+        "{}/{}/_git/{}/pullrequest/{}",
+        client.org, client.project, repo, pr_id
+    )
+}
+
+fn strip_refs_heads(s: &str) -> &str {
+    s.strip_prefix("refs/heads/").unwrap_or(s)
+}
+
+/// PATCH with application/json (PR endpoints take a flat JSON body, not JSON Patch).
+async fn patch_json<B: serde::Serialize, T: serde::de::DeserializeOwned>(
+    client: &AdoClient,
+    path: &str,
+    body: &B,
+) -> Result<T> {
+    let resp = client
+        .patch(path)
+        .header("Content-Type", "application/json")
+        .json(body)
+        .send()
+        .await
+        .context("PATCH request failed")?;
+    let resp = AdoClient::check_response(resp).await?;
+    resp.json::<T>().await.context("failed to parse JSON response")
+}
+
+/// Apply `--field name=value` entries into a JSON object body. Names are
+/// resolved through `resolve_pr_field` (alias map) before insertion.
+fn apply_fields(body: &mut serde_json::Value, fields: &[String]) -> Result<()> {
+    if fields.is_empty() {
+        return Ok(());
+    }
+    let map = body.as_object_mut().context("apply_fields: body is not an object")?;
+    for entry in fields {
+        let (name, value) = split_field_arg(entry)?;
+        let key = resolve_pr_field(name)?;
+        map.insert(key, coerce_value(value));
+    }
+    Ok(())
+}
+
+/// Map a short alias (e.g. "draft", "status") to its ADO PR field name.
+/// If `name` contains '.' or any uppercase letter, treat it as a literal ADO key.
+fn resolve_pr_field(name: &str) -> Result<String> {
+    if name.contains('.') || name.chars().any(|c| c.is_ascii_uppercase()) {
+        return Ok(name.to_string());
+    }
+    let key = name.trim().to_ascii_lowercase().replace('_', "-");
+    Ok(match key.as_str() {
+        "title"                => "title",
+        "description"          => "description",
+        "draft" | "is-draft"   => "isDraft",
+        "status"               => "status",
+        "auto-complete"
+      | "auto-complete-set-by" => "autoCompleteSetBy",
+        other => bail!("unknown PR field alias '{other}' — pass the full ADO key (e.g. isDraft) or one of: title, description, draft, status, auto-complete"),
+    }.to_string())
+}
+
+/// Get the authenticated user's identity UUID — used to vote on PRs.
+async fn self_identity_id(client: &AdoClient) -> Result<String> {
+    let v: serde_json::Value = client
+        .get_json("_apis/connectionData?api-version=7.1-preview.1")
+        .await
+        .context("could not fetch connectionData")?;
+    v["authenticatedUser"]["id"]
+        .as_str()
+        .map(String::from)
+        .context("connectionData missing authenticatedUser.id")
+}
+
+/// Resolve a reviewer display name / email to an identity UUID. Returns the
+/// first match; warns to stderr if multiple.
+async fn resolve_identity(client: &AdoClient, name: &str) -> Result<String> {
+    let path = format!(
+        "_apis/identities?searchFilter=General&filterValue={}&api-version=6.0",
+        url_encode(name)
+    );
+    let resp: IdentitiesResponse = client.get_json(&path).await?;
+    let mut iter = resp.value.into_iter().filter(|i| !i.id.is_empty());
+    let first = iter.next().with_context(|| format!("no identity matched '{name}'"))?;
+    if iter.next().is_some() {
+        eprintln!("warning: multiple identities matched '{name}', using first: {}", first.display_name);
+    }
+    Ok(first.id)
+}
+
+fn url_encode(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
+            ' ' => "%20".into(),
+            c => format!("%{:02X}", c as u32),
+        })
+        .collect()
+}
+
+// ── repo / branch resolution ────────────────────────────────────────────────
+
+fn current_branch() -> Result<String> {
+    let out = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .context("failed to invoke git")?;
+    if !out.status.success() {
+        bail!("git rev-parse --abbrev-ref HEAD failed (not in a git repo?)");
+    }
+    let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if branch.is_empty() || branch == "HEAD" {
+        bail!("could not determine current branch");
+    }
+    Ok(branch)
+}
+
+fn repo_from_remote() -> Option<String> {
+    let out = Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let url = url.trim_end_matches(".git");
+    url.rsplit('/').next().map(String::from).filter(|s| !s.is_empty())
+}
+
+fn resolve_repo_optional(cli: Option<&str>) -> Option<String> {
+    if let Some(r) = cli {
+        return Some(r.to_string());
+    }
+    if let Ok(r) = std::env::var("ADO_REPO") {
+        if !r.trim().is_empty() {
+            return Some(r);
+        }
+    }
+    repo_from_remote()
+}
+
+fn resolve_repo_required(cli: Option<&str>) -> Result<String> {
+    resolve_repo_optional(cli).context(
+        "could not determine repo — pass --repo, set ADO_REPO in .env, or run from a git repo with an ADO origin",
+    )
 }

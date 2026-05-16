@@ -14,7 +14,7 @@ clap = { version = "4", features = ["derive"] }
 # Async runtime — required by reqwest for non-blocking HTTP calls
 tokio = { version = "1", features = ["full"] }
 
-# HTTP client — rustls-tls avoids OpenSSL so the Windows binary has no DLL dependencies
+# HTTP client — rustls-tls avoids the system OpenSSL/Schannel dependency for portable static builds
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 # JSON serialization/deserialization for ADO REST API payloads
@@ -29,3 +29,6 @@ dirs = "5"
 
 # TOML config file parsing
 toml = "0.8"
+
+# Loads a .env file at startup so per-repo project/org/PAT can be swapped without editing global config
+dotenvy = "0.15"

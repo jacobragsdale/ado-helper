@@ -1,6 +1,11 @@
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::process::Command;
+
+use crate::client::AdoClient;
+use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
 pub struct RepoArgs {
@@ -16,8 +21,12 @@ pub enum RepoCommand {
     /// List all repositories in the project
     List(ListArgs),
 
-    /// Clone a repository to the current directory
+    /// Clone a repository to the current directory (uses ADO_PAT for auth)
     Clone(CloneArgs),
+
+    /// Delete a repository (permanent — there is no recycle bin)
+    #[command(alias = "rm")]
+    Delete(DeleteArgs),
 }
 
 #[derive(Args)]
@@ -47,6 +56,28 @@ pub struct CloneArgs {
     /// Name of the repository to clone
     pub name: String,
 
+    /// Destination directory (defaults to ./<name>)
+    pub dest: Option<String>,
+
+    /// Project the repo belongs to (defaults to configured project)
+    #[arg(long)]
+    pub project: Option<String>,
+
+    /// Leave the PAT baked into the cloned remote URL (useful for CI). By
+    /// default, the remote is rewritten to the credential-free URL after clone.
+    #[arg(long)]
+    pub keep_pat_in_remote: bool,
+}
+
+#[derive(Args)]
+pub struct DeleteArgs {
+    /// Name (or ID) of the repository to delete
+    pub name: String,
+
+    /// Required confirmation — this is permanent
+    #[arg(long)]
+    pub yes: bool,
+
     /// Project the repo belongs to (defaults to configured project)
     #[arg(long)]
     pub project: Option<String>,
@@ -62,11 +93,14 @@ pub struct Repository {
     #[serde(rename = "remoteUrl")]
     pub remote_url: String,
 
-    #[serde(rename = "defaultBranch")]
+    #[serde(default, rename = "defaultBranch")]
     pub default_branch: Option<String>,
 
-    #[serde(rename = "webUrl")]
+    #[serde(default, rename = "webUrl")]
     pub web_url: String,
+
+    #[serde(default)]
+    pub size: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -75,79 +109,160 @@ pub struct RepoListResponse {
     pub count: u32,
 }
 
-// ── Command handlers ──────────────────────────────────────────────────────────
+// ── Command dispatch ────────────────────────────────────────────────────────
 
-pub async fn run(args: RepoArgs) -> Result<()> {
+pub async fn run(args: RepoArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     match args.command {
-        RepoCommand::Create(a) => create(a).await,
-        RepoCommand::List(a) => list(a).await,
-        RepoCommand::Clone(a) => clone(a).await,
+        RepoCommand::Create(a) => create(a, client, output).await,
+        RepoCommand::List(a) => list(a, client, output).await,
+        RepoCommand::Clone(a) => clone(a, client).await,
+        RepoCommand::Delete(a) => delete(a, client).await,
     }
 }
 
-/*
- * IMPLEMENTATION NOTES — create()
- *
- * Endpoint: POST {org}/{project}/_apis/git/repositories?api-version=7.1
- *
- * Request body:
- *   {
- *     "name": "<args.name>",
- *     "project": { "name": "<project>" },
- *     "defaultBranch": "refs/heads/<args.default_branch>"
- *   }
- *
- * On success, ADO returns the full Repository object.
- * Print: "<repo-name>  <remoteUrl>"
- *
- * Notes:
- *   - The defaultBranch field must be in refs/heads/ format.
- *   - ADO returns 400 if a repo with the same name already exists in the project;
- *     the check_response helper will surface the ADO error message.
- */
-async fn create(args: CreateArgs) -> Result<()> {
-    todo!("POST to git/repositories, print created repo name and clone URL")
+// ── list ────────────────────────────────────────────────────────────────────
+
+async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let path = format!("{project}/_apis/git/repositories?api-version=7.1");
+    let mut resp: RepoListResponse = client.get_json(&path).await?;
+    resp.value.sort_by(|a, b| a.name.cmp(&b.name));
+
+    match output {
+        OutputFormat::Json => output::print_json(&resp)?,
+        OutputFormat::Text => {
+            if resp.value.is_empty() {
+                println!("(no repos in {project})");
+                return Ok(());
+            }
+            let width = resp.value.iter().map(|r| r.name.len()).max().unwrap_or(0);
+            for r in &resp.value {
+                println!("{:width$}  {}", r.name, r.remote_url, width = width);
+            }
+        }
+        OutputFormat::Table => {
+            if resp.value.is_empty() {
+                println!("(no repos in {project})");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = resp
+                .value
+                .iter()
+                .map(|r| vec![r.name.clone(), r.remote_url.clone()])
+                .collect();
+            output::print_table(&["Name", "Remote"], &rows);
+        }
+    }
+    Ok(())
 }
 
-/*
- * IMPLEMENTATION NOTES — list()
- *
- * Endpoint: GET {org}/{project}/_apis/git/repositories?api-version=7.1
- *
- * Deserialize the response as RepoListResponse.
- * For each repository in response.value, print one line:
- *   "<name>  <remoteUrl>"
- *
- * Sort alphabetically by name before printing so output is stable.
- *
- * With --output json, print the full RepoListResponse as pretty JSON.
- */
-async fn list(args: ListArgs) -> Result<()> {
-    todo!("GET git/repositories, print one line per repo")
+// ── create ─────────────────────────────────────────────────────────────────
+
+async fn create(args: CreateArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let path = format!("{project}/_apis/git/repositories?api-version=7.1");
+    // The project is already scoped by the URI; including it in the body with
+    // a name (rather than UUID) makes ADO reject the request. defaultBranch is
+    // also omitted — an empty repo has no refs to set, and `git init` on the
+    // first push will record HEAD.
+    let _ = &args.default_branch; // kept on the CLI for future use
+    let body = json!({ "name": args.name });
+    let repo: Repository = client.post_json(&path, &body).await?;
+    match output {
+        OutputFormat::Json => output::print_json(&repo)?,
+        OutputFormat::Text | OutputFormat::Table => {
+            println!("Created repo {}\n  clone: {}", repo.name, repo.remote_url)
+        }
+    }
+    Ok(())
 }
 
-/*
- * IMPLEMENTATION NOTES — clone()
- *
- * 1. Look up the repository by name:
- *    GET {org}/{project}/_apis/git/repositories/{args.name}?api-version=7.1
- *    This returns a single Repository object.
- *
- * 2. Extract the remoteUrl field — this is the HTTPS clone URL.
- *
- * 3. Shell out to git:
- *      std::process::Command::new("git")
- *          .args(["clone", &repo.remote_url])
- *          .status()?;
- *
- *    Inherit stdout/stderr so the user sees git's progress output live.
- *
- * 4. If git exits non-zero, return an error.
- *
- * Note: The user must have their PAT embedded in a credential helper or the
- * Windows Credential Manager for git to authenticate. Alternatively, print a
- * hint: "If prompted for a password, use your PAT token."
- */
-async fn clone(args: CloneArgs) -> Result<()> {
-    todo!("look up repo by name, then shell out to git clone <remoteUrl>")
+// ── clone ───────────────────────────────────────────────────────────────────
+
+async fn clone(args: CloneArgs, client: &AdoClient) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let repo = lookup_repo(client, project, &args.name).await?;
+
+    let dest = args.dest.unwrap_or_else(|| repo.name.clone());
+    let auth_url = inject_pat(&repo.remote_url, client.pat());
+
+    println!("Cloning {} into {dest}...", repo.name);
+    let status = Command::new("git")
+        .args(["clone", &auth_url, &dest])
+        .status()
+        .context("failed to invoke `git clone` — is git installed and on PATH?")?;
+    if !status.success() {
+        bail!("git clone exited with status {status}");
+    }
+
+    if !args.keep_pat_in_remote {
+        // Rewrite origin to the credential-free URL so the PAT doesn't leak
+        // through `git remote -v` or `.git/config`.
+        let st = Command::new("git")
+            .args(["-C", &dest, "remote", "set-url", "origin", &repo.remote_url])
+            .status()
+            .context("failed to rewrite origin URL after clone")?;
+        if !st.success() {
+            eprintln!("warning: could not rewrite origin URL — PAT may remain in {dest}/.git/config");
+        }
+    }
+    println!("Done.");
+    Ok(())
+}
+
+// ── delete ──────────────────────────────────────────────────────────────────
+
+async fn delete(args: DeleteArgs, client: &AdoClient) -> Result<()> {
+    if !args.yes {
+        bail!("repo deletion is permanent — pass --yes to confirm");
+    }
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let repo = lookup_repo(client, project, &args.name).await?;
+    let path = format!("{project}/_apis/git/repositories/{}?api-version=7.1", repo.id);
+    client.delete_no_body(&path).await?;
+    println!("Deleted repo {} ({})", repo.name, repo.id);
+    Ok(())
+}
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+async fn lookup_repo(client: &AdoClient, project: &str, name_or_id: &str) -> Result<Repository> {
+    let path = format!("{project}/_apis/git/repositories/{name_or_id}?api-version=7.1");
+    client
+        .get_json(&path)
+        .await
+        .with_context(|| format!("could not find repo '{name_or_id}' in project '{project}'"))
+}
+
+/// Take an ADO HTTPS clone URL and inject the PAT as `anything:<pat>@`.
+/// Strips any existing `user@` prefix so we don't end up with two userinfo blocks.
+fn inject_pat(remote_url: &str, pat: &str) -> String {
+    let after_scheme = remote_url.strip_prefix("https://").unwrap_or(remote_url);
+    let host_path = after_scheme.split_once('@').map(|(_, hp)| hp).unwrap_or(after_scheme);
+    format!("https://anything:{pat}@{host_path}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inject_pat_replaces_existing_userinfo() {
+        let url = "https://jacobragsdale@dev.azure.com/jacobragsdale/development/_git/development";
+        let injected = inject_pat(url, "TOKEN");
+        assert_eq!(
+            injected,
+            "https://anything:TOKEN@dev.azure.com/jacobragsdale/development/_git/development"
+        );
+    }
+
+    #[test]
+    fn inject_pat_handles_no_userinfo() {
+        let url = "https://dev.azure.com/jacobragsdale/development/_git/development";
+        let injected = inject_pat(url, "TOKEN");
+        assert_eq!(
+            injected,
+            "https://anything:TOKEN@dev.azure.com/jacobragsdale/development/_git/development"
+        );
+    }
 }
