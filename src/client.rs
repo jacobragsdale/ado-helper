@@ -1,11 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use reqwest::{Client, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 
 /// Shared HTTP client pre-configured with auth and base URL for the ADO REST API.
 pub struct AdoClient {
     http: Client,
-    /// Full org URL, e.g. "https://dev.azure.com/myorg"
+    /// Full org URL, e.g. "https://dev.azure.com/myorg" (no trailing slash)
     pub org: String,
     /// Default project — subcommands use this when --project is not supplied
     pub project: String,
@@ -14,142 +14,135 @@ pub struct AdoClient {
 }
 
 impl AdoClient {
-    /*
-     * IMPLEMENTATION NOTES — AdoClient::new()
-     *
-     * Build a reqwest::Client with rustls-tls (already selected in Cargo.toml via
-     * default-features = false, features = ["rustls-tls"]).
-     *
-     * Validate that org and pat are non-empty; return an error if either is missing.
-     * Trim trailing slashes from org so URL construction is always clean.
-     *
-     *   let http = Client::builder()
-     *       .use_rustls_tls()
-     *       .build()?;
-     */
     pub fn new(org: String, project: String, pat: String) -> Result<Self> {
-        todo!("construct AdoClient with a reqwest Client")
+        if org.trim().is_empty() {
+            bail!("org URL is empty");
+        }
+        if pat.trim().is_empty() {
+            bail!("PAT is empty");
+        }
+        let org = org.trim_end_matches('/').to_string();
+        let http = Client::builder().use_rustls_tls().build()?;
+        Ok(Self { http, org, project, pat })
     }
 
-    /*
-     * IMPLEMENTATION NOTES — AdoClient::get() / post() / patch() / put()
-     *
-     * Each method constructs a RequestBuilder pre-populated with:
-     *
-     *   1. The full URL: format!("{}/{}", self.org, path)
-     *      The `path` argument should start without a slash, e.g.:
-     *        "_apis/git/repositories?api-version=7.1"
-     *        "MyProject/_apis/git/repositories?api-version=7.1"
-     *
-     *   2. Basic auth: ADO uses an empty username and the PAT as the password.
-     *      reqwest's basic_auth("", Some(&self.pat)) handles the base64 encoding.
-     *
-     *   3. Accept: application/json header.
-     *
-     * Return the RequestBuilder so callers can chain .json(&body).send().await.
-     */
+    fn url(&self, path: &str) -> String {
+        format!("{}/{}", self.org, path.trim_start_matches('/'))
+    }
+
     pub fn get(&self, path: &str) -> RequestBuilder {
-        todo!("return self.http.get(url).basic_auth(...).header(Accept, application/json)")
+        self.http
+            .get(self.url(path))
+            .basic_auth("", Some(&self.pat))
+            .header("Accept", "application/json")
     }
 
     pub fn post(&self, path: &str) -> RequestBuilder {
-        todo!("return self.http.post(url).basic_auth(...).header(Accept, application/json)")
+        self.http
+            .post(self.url(path))
+            .basic_auth("", Some(&self.pat))
+            .header("Accept", "application/json")
     }
 
     pub fn patch(&self, path: &str) -> RequestBuilder {
-        todo!("return self.http.patch(url).basic_auth(...).header(Accept, application/json)")
+        self.http
+            .patch(self.url(path))
+            .basic_auth("", Some(&self.pat))
+            .header("Accept", "application/json")
     }
 
     pub fn put(&self, path: &str) -> RequestBuilder {
-        todo!("return self.http.put(url).basic_auth(...).header(Accept, application/json)")
+        self.http
+            .put(self.url(path))
+            .basic_auth("", Some(&self.pat))
+            .header("Accept", "application/json")
     }
 
-    /*
-     * IMPLEMENTATION NOTES — AdoClient::check_response()
-     *
-     * ADO returns 4xx/5xx with a JSON body like:
-     *   {"$id":"1","innerException":null,"message":"TF401019: ...","typeName":"..."}
-     *
-     * If response.status().is_success() is false:
-     *   1. Read the body text: let body = response.text().await?
-     *   2. Try to parse the "message" field from the JSON body.
-     *   3. Return anyhow::bail!("ADO error {status}: {message}")
-     *
-     * If successful, return Ok(response) so callers can call .json::<T>().await?.
-     */
+    pub fn delete(&self, path: &str) -> RequestBuilder {
+        self.http
+            .delete(self.url(path))
+            .basic_auth("", Some(&self.pat))
+            .header("Accept", "application/json")
+    }
+
     pub async fn check_response(response: Response) -> Result<Response> {
-        todo!("check HTTP status, extract ADO error message on failure")
+        let status = response.status();
+        if status.is_success() {
+            return Ok(response);
+        }
+        let body = response.text().await.unwrap_or_default();
+        let message = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(String::from))
+            .unwrap_or(body);
+        bail!("ADO error {status}: {message}")
     }
 
-    /*
-     * IMPLEMENTATION NOTES — AdoClient::get_json()
-     *
-     * Convenience wrapper:
-     *   1. Call self.get(path).send().await?
-     *   2. Pass through check_response().
-     *   3. Deserialize with .json::<T>().await?
-     *
-     * Usage:  let repos: RepoListResponse = client.get_json("proj/_apis/...").await?;
-     */
     pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        todo!("send GET request and deserialize JSON response")
+        let resp = self.get(path).send().await.context("GET request failed")?;
+        let resp = Self::check_response(resp).await?;
+        resp.json::<T>().await.context("failed to parse JSON response")
     }
 
-    /*
-     * IMPLEMENTATION NOTES — AdoClient::post_json()
-     *
-     * Same as get_json but sends a POST with a JSON body:
-     *   1. Call self.post(path).json(&body).send().await?
-     *   2. Pass through check_response().
-     *   3. Deserialize with .json::<T>().await?
-     */
     pub async fn post_json<B: serde::Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
     ) -> Result<T> {
-        todo!("send POST with JSON body and deserialize JSON response")
+        let resp = self
+            .post(path)
+            .header("Content-Type", "application/json")
+            .json(body)
+            .send()
+            .await
+            .context("POST request failed")?;
+        let resp = Self::check_response(resp).await?;
+        resp.json::<T>().await.context("failed to parse JSON response")
     }
 
-    /*
-     * IMPLEMENTATION NOTES — AdoClient::patch_json()
-     *
-     * Same pattern as post_json but uses PATCH. Used for:
-     *   - Completing a PR (PATCH pullrequests/{id})
-     *   - Updating a work item (PATCH workitems/{id} with JSON Patch content-type)
-     *
-     * Note: Work item updates require Content-Type: application/json-patch+json
-     * (not application/json). Add an extra .header() call for those endpoints.
-     */
-    pub async fn patch_json<B: serde::Serialize, T: DeserializeOwned>(
+    /// PATCH with a JSON Patch body — required content-type for work item updates.
+    pub async fn patch_json_patch<B: serde::Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
     ) -> Result<T> {
-        todo!("send PATCH with JSON body and deserialize JSON response")
+        let resp = self
+            .patch(path)
+            .header("Content-Type", "application/json-patch+json")
+            .json(body)
+            .send()
+            .await
+            .context("PATCH request failed")?;
+        let resp = Self::check_response(resp).await?;
+        resp.json::<T>().await.context("failed to parse JSON response")
     }
 
-    /// Build a path scoped to the default project: "{project}/{path}"
-    pub fn project_path(&self, path: &str) -> String {
-        format!("{}/{}", self.project, path)
+    /// DELETE that doesn't expect a JSON body in response.
+    pub async fn delete_no_body(&self, path: &str) -> Result<()> {
+        let resp = self.delete(path).send().await.context("DELETE request failed")?;
+        Self::check_response(resp).await?;
+        Ok(())
     }
 
-    /// Open a URL in the default browser on Windows using `cmd /c start <url>`
+    /// PAT accessor — used by `repo clone` to embed credentials in the clone URL.
+    /// Not for general use; everything else should go through the auth'd helpers.
+    pub fn pat(&self) -> &str {
+        &self.pat
+    }
+
+    /// Open a URL in the default browser. Cross-platform: macOS, Linux, Windows.
     pub fn open_in_browser(url: &str) -> Result<()> {
-        /*
-         * IMPLEMENTATION NOTES — open_in_browser()
-         *
-         * On Windows, run:
-         *   std::process::Command::new("cmd")
-         *       .args(["/c", "start", url])
-         *       .spawn()?;
-         *
-         * The `start` command is a cmd.exe built-in that opens the URL in the
-         * default browser. We spawn (don't wait) because the browser opens async.
-         *
-         * If this tool is ever run on macOS for testing, fall back to:
-         *   std::process::Command::new("open").arg(url).spawn()?;
-         */
-        todo!("shell out to cmd /c start <url> on Windows")
+        #[cfg(target_os = "macos")]
+        let (program, args): (&str, Vec<&str>) = ("open", vec![url]);
+        #[cfg(target_os = "windows")]
+        let (program, args): (&str, Vec<&str>) = ("cmd", vec!["/c", "start", "", url]);
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let (program, args): (&str, Vec<&str>) = ("xdg-open", vec![url]);
+
+        std::process::Command::new(program)
+            .args(&args)
+            .spawn()
+            .with_context(|| format!("failed to spawn {program}"))?;
+        Ok(())
     }
 }

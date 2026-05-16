@@ -1,6 +1,12 @@
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::time::Duration;
+
+use crate::client::AdoClient;
+use crate::fields::split_field_arg;
+use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
 pub struct PipelineArgs {
@@ -33,8 +39,8 @@ pub struct RunArgs {
     pub pipeline: String,
 
     /// Branch to run the pipeline on
-    #[arg(long)]
-    pub branch: Option<String>,
+    #[arg(long, default_value = "main")]
+    pub branch: String,
 
     /// Pipeline variables in key=value format (repeatable)
     #[arg(long = "var", value_name = "KEY=VALUE")]
@@ -70,13 +76,11 @@ pub struct Pipeline {
     pub id: u32,
     pub name: String,
 
-    #[serde(rename = "folderPath")]
+    #[serde(default, rename = "folder")]
     pub folder: Option<String>,
 
+    #[serde(default)]
     pub revision: u32,
-
-    #[serde(rename = "_links")]
-    pub links: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -90,100 +94,206 @@ pub struct PipelineRun {
     pub id: u32,
     pub name: String,
     pub state: String,
+    #[serde(default)]
     pub result: Option<String>,
 
-    #[serde(rename = "createdDate")]
-    pub created_date: String,
+    #[serde(default, rename = "createdDate")]
+    pub created_date: Option<String>,
 
-    #[serde(rename = "finishedDate")]
+    #[serde(default, rename = "finishedDate")]
     pub finished_date: Option<String>,
-
-    #[serde(rename = "_links")]
-    pub links: Option<serde_json::Value>,
 }
 
-// ── Command handlers ──────────────────────────────────────────────────────────
+// ── Command dispatch ────────────────────────────────────────────────────────
 
-pub async fn run(args: PipelineArgs) -> Result<()> {
+pub async fn run(args: PipelineArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     match args.command {
-        PipelineCommand::List(a) => list(a).await,
-        PipelineCommand::Run(a) => run_pipeline(a).await,
-        PipelineCommand::Status(a) => status(a).await,
+        PipelineCommand::List(a) => list(a, client, output).await,
+        PipelineCommand::Run(a) => run_pipeline(a, client, output).await,
+        PipelineCommand::Status(a) => status(a, client, output).await,
     }
 }
 
-/*
- * IMPLEMENTATION NOTES — list()
- *
- * Endpoint: GET {org}/{project}/_apis/pipelines?api-version=7.1
- *
- * Deserialize as PipelineListResponse.
- * Sort by name before printing.
- *
- * Plain text output per pipeline (one line):
- *   {id}  {name}  (folder: {folderPath or "/"})
- *
- * With --output json, print the full PipelineListResponse.
- */
-async fn list(args: ListArgs) -> Result<()> {
-    todo!("GET pipelines, print one line per pipeline with ID and name")
+// ── list ────────────────────────────────────────────────────────────────────
+
+async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let resp = fetch_pipelines(client, project).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&resp)?,
+        OutputFormat::Text => {
+            if resp.value.is_empty() {
+                println!("(no pipelines in {project})");
+                return Ok(());
+            }
+            let id_width = resp.value.iter().map(|p| p.id.to_string().len()).max().unwrap_or(1);
+            let name_width = resp.value.iter().map(|p| p.name.len()).max().unwrap_or(0);
+            for p in &resp.value {
+                let folder = p.folder.as_deref().unwrap_or("/");
+                println!(
+                    "{:>id$}  {:name$}  (folder: {})",
+                    p.id, p.name, folder,
+                    id = id_width, name = name_width
+                );
+            }
+        }
+        OutputFormat::Table => {
+            if resp.value.is_empty() {
+                println!("(no pipelines in {project})");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = resp
+                .value
+                .iter()
+                .map(|p| {
+                    vec![
+                        p.id.to_string(),
+                        p.name.clone(),
+                        p.folder.clone().unwrap_or_else(|| "/".to_string()),
+                    ]
+                })
+                .collect();
+            output::print_table(&["ID", "Name", "Folder"], &rows);
+        }
+    }
+    Ok(())
 }
 
-/*
- * IMPLEMENTATION NOTES — run_pipeline()
- *
- * Step 1 — Resolve pipeline ID from name (if args.pipeline is not numeric):
- *   GET {org}/{project}/_apis/pipelines?api-version=7.1
- *   Search value[].name for a case-insensitive match.
- *   If multiple pipelines match, print them and ask the user to use the numeric ID.
- *   If args.pipeline parses as u32, use it directly as the pipeline ID.
- *
- * Step 2 — Parse variables from "KEY=VALUE" strings:
- *   Split each entry on the first '=' to get (key, value) pairs.
- *   Build a JSON object: { "variables": { "KEY": { "value": "VALUE" }, ... } }
- *
- * Step 3 — Trigger the run:
- *   POST {org}/{project}/_apis/pipelines/{id}/runs?api-version=7.1
- *   Request body:
- *   {
- *     "resources": {
- *       "repositories": {
- *         "self": {
- *           "refName": "refs/heads/<args.branch or 'main'>"
- *         }
- *       }
- *     },
- *     "variables": { ... }   // omit if no variables
- *   }
- *
- * On success, print:
- *   "Started run #{run-id} for pipeline '{name}'"
- *   "Track status: ado pipeline status {run-id} --pipeline-id {pipeline-id}"
- */
-async fn run_pipeline(args: RunArgs) -> Result<()> {
-    todo!("resolve pipeline ID by name if needed, POST to runs endpoint")
+// ── run ─────────────────────────────────────────────────────────────────────
+
+async fn run_pipeline(args: RunArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let pipeline = resolve_pipeline(client, project, &args.pipeline).await?;
+
+    let mut body = json!({
+        "resources": {
+            "repositories": {
+                "self": {
+                    "refName": format!("refs/heads/{}", args.branch),
+                }
+            }
+        }
+    });
+
+    if !args.variables.is_empty() {
+        let mut vars = serde_json::Map::new();
+        for entry in &args.variables {
+            let (k, v) = split_field_arg(entry)?;
+            vars.insert(k.to_string(), json!({ "value": v }));
+        }
+        body["variables"] = serde_json::Value::Object(vars);
+    }
+
+    let path = format!(
+        "{project}/_apis/pipelines/{}/runs?api-version=7.1",
+        pipeline.id
+    );
+    let started: PipelineRun = client.post_json(&path, &body).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&started)?,
+        OutputFormat::Text | OutputFormat::Table => {
+            println!("Started run #{} for pipeline '{}'", started.id, pipeline.name);
+            println!(
+                "Track status: ado pipeline status {} --pipeline-id {}",
+                started.id, pipeline.id
+            );
+        }
+    }
+    Ok(())
 }
 
-/*
- * IMPLEMENTATION NOTES — status()
- *
- * Endpoint: GET {org}/{project}/_apis/pipelines/{pipeline_id}/runs/{run_id}?api-version=7.1
- *
- * Plain text output:
- *   Run #<id>: <name>
- *   State:     <state>          // inProgress | completed | cancelling
- *   Result:    <result or "—">  // succeeded | failed | canceled | partiallySucceeded
- *   Started:   <createdDate>
- *   Finished:  <finishedDate or "still running">
- *
- * With --watch flag:
- *   Poll every 10 seconds using tokio::time::sleep(Duration::from_secs(10)).
- *   On each poll, clear the previous output (print "\x1B[2J\x1B[H" to clear screen)
- *   and re-print the status. Stop polling when state == "completed" or "cancelling".
- *   Print a final "Run finished: <result>" message.
- *
- * With --output json, print the full PipelineRun object.
- */
-async fn status(args: StatusArgs) -> Result<()> {
-    todo!("GET pipeline run by ID, optionally poll until finished")
+// ── status ──────────────────────────────────────────────────────────────────
+
+async fn status(args: StatusArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let path = format!(
+        "{project}/_apis/pipelines/{}/runs/{}?api-version=7.1",
+        args.pipeline_id, args.run_id
+    );
+
+    if !args.watch {
+        let run: PipelineRun = client.get_json(&path).await?;
+        match output {
+            OutputFormat::Json => output::print_json(&run)?,
+            OutputFormat::Text | OutputFormat::Table => print_run_text(&run),
+        }
+        return Ok(());
+    }
+
+    // --watch: poll every 10s, clearing the screen between polls until the
+    // run reaches a terminal state. Terminal states per ADO: completed,
+    // cancelling (no further updates expected once seen).
+    loop {
+        let run: PipelineRun = client.get_json(&path).await?;
+        // Clear screen + home cursor.
+        print!("\x1B[2J\x1B[1;1H");
+        match output {
+            OutputFormat::Json => output::print_json(&run)?,
+            OutputFormat::Text | OutputFormat::Table => {
+                print_run_text(&run);
+                println!();
+                println!("(watching — Ctrl-C to stop)");
+            }
+        }
+        if run.state.eq_ignore_ascii_case("completed") {
+            println!();
+            println!("Run finished: {}", run.result.as_deref().unwrap_or("(no result)"));
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_secs(10)).await;
+    }
+}
+
+fn print_run_text(run: &PipelineRun) {
+    println!("Run #{}: {}", run.id, run.name);
+    println!("State:    {}", run.state);
+    println!("Result:   {}", run.result.as_deref().unwrap_or("—"));
+    println!("Started:  {}", run.created_date.as_deref().unwrap_or("?"));
+    println!(
+        "Finished: {}",
+        run.finished_date.as_deref().unwrap_or("still running")
+    );
+}
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+async fn fetch_pipelines(client: &AdoClient, project: &str) -> Result<PipelineListResponse> {
+    let path = format!("{project}/_apis/pipelines?api-version=7.1");
+    let mut resp: PipelineListResponse = client.get_json(&path).await?;
+    resp.value.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(resp)
+}
+
+/// Accepts a numeric pipeline ID or a (case-insensitive) name. Returns the
+/// matching Pipeline. On multiple name matches, lists them and bails so the
+/// user can pick by ID.
+async fn resolve_pipeline(client: &AdoClient, project: &str, input: &str) -> Result<Pipeline> {
+    if let Ok(id) = input.parse::<u32>() {
+        let path = format!("{project}/_apis/pipelines/{id}?api-version=7.1");
+        return client.get_json(&path).await
+            .with_context(|| format!("could not find pipeline {id}"));
+    }
+
+    let resp = fetch_pipelines(client, project).await?;
+    let matches: Vec<&Pipeline> = resp
+        .value
+        .iter()
+        .filter(|p| p.name.eq_ignore_ascii_case(input))
+        .collect();
+
+    match matches.len() {
+        0 => bail!("no pipeline named '{input}' in {project}"),
+        1 => Ok(Pipeline {
+            id: matches[0].id,
+            name: matches[0].name.clone(),
+            folder: matches[0].folder.clone(),
+            revision: matches[0].revision,
+        }),
+        _ => {
+            let ids: Vec<String> = matches.iter().map(|p| format!("  {} (id {})", p.name, p.id)).collect();
+            bail!("multiple pipelines match '{input}':\n{}\nuse a numeric ID instead", ids.join("\n"));
+        }
+    }
 }
