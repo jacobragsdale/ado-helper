@@ -1,0 +1,25 @@
+{
+  "commits": [
+    {
+      "changes": [
+        {
+          "changeType": "add",
+          "item": {
+            "path": "/azure-pipelines.ado-helper-smoke.yml"
+          },
+          "newContent": {
+            "content": "trigger: none\npr: none\n\npool:\n  vmImage: ubuntu-latest\n\nsteps:\n  - bash: |\n      echo \"ado-helper smoke started\"\n      echo \"branch=$(Build.SourceBranch)\"\n      echo \"smoke=$(smoke)\"\n      echo \"environment=$(environment)\"\n      for i in 1 2 3 4 5; do\n        echo \"log-line-$i\"\n        sleep 5\n      done\n    displayName: \"Print dummy logs\"\n",
+            "contentType": "rawtext"
+          }
+        }
+      ],
+      "comment": "Add ado-helper smoke pipeline YAML"
+    }
+  ],
+  "refUpdates": [
+    {
+      "name": "refs/heads/main",
+      "oldObjectId": "3c7010c494a82daf21b2c1dd7cd65155fe51fa40"
+    }
+  ]
+}

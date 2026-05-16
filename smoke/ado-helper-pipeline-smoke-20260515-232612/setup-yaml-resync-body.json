@@ -1,0 +1,25 @@
+{
+  "commits": [
+    {
+      "changes": [
+        {
+          "changeType": "edit",
+          "item": {
+            "path": "/azure-pipelines.ado-helper-smoke.yml"
+          },
+          "newContent": {
+            "content": "trigger: none\npr: none\n\nparameters:\n  - name: environment\n    type: string\n    default: dev\n\npool:\n  vmImage: ubuntu-latest\n\nsteps:\n  - bash: |\n      echo \"ado-helper smoke started\"\n      echo \"branch=$(Build.SourceBranch)\"\n      echo \"smoke=$(smoke)\"\n      echo \"environment=$(environment)\"\n      echo \"parameter_environment=${{ parameters.environment }}\"\n      for i in 1 2 3 4 5; do\n        echo \"log-line-$i\"\n        sleep 5\n      done\n    displayName: \"Print dummy logs\"\n",
+            "contentType": "rawtext"
+          }
+        }
+      ],
+      "comment": "Update ado-helper smoke pipeline YAML"
+    }
+  ],
+  "refUpdates": [
+    {
+      "name": "refs/heads/main",
+      "oldObjectId": "6d4ecbb33aa4edd4506376d7b61b3df9136518af"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "logs": [
+    {
+      "id": 1,
+      "createdOn": "2026-05-16T04:33:53.773Z",
+      "lastChangedOn": "2026-05-16T04:33:54.077Z",
+      "lineCount": 21,
+      "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/pipelines/2/runs/4/logs/1",
+      "signedContent": null
+    },
+    {
+      "id": 2,
+      "createdOn": "2026-05-16T04:33:53.773Z",
+      "lastChangedOn": "2026-05-16T04:33:53.793Z",
+      "lineCount": 76,
+      "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/pipelines/2/runs/4/logs/2",
+      "signedContent": null
+    },
+    {
+      "id": 3,
+      "createdOn": "2026-05-16T04:33:55.37Z",
+      "lastChangedOn": "2026-05-16T04:33:55.373Z",
+      "lineCount": 9,
+      "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/pipelines/2/runs/4/logs/3",
+      "signedContent": null
+    }
+  ],
+  "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/pipelines/2/runs/4/logs"
+}

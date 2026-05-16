@@ -1,0 +1,2 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running `target/debug/ado pipeline preview ado-helper-smoke --branch main --var smoke=true --param environment=dev --output text`

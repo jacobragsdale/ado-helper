@@ -1,0 +1,7 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/ado pipeline logs 3 --pipeline-id 2 --output table`
+Error: failed to parse JSON response
+
+Caused by:
+    0: error decoding response body
+    1: missing field `value` at line 1 column 777

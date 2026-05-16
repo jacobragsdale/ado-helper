@@ -1,0 +1,12 @@
+{
+  "configuration": {
+    "path": "/azure-pipelines.ado-helper-smoke.yml",
+    "repository": {
+      "id": "a818816d-f5f0-4660-b47c-a0fa45a7dae3",
+      "name": "ado-helper",
+      "type": "azureReposGit"
+    },
+    "type": "yaml"
+  },
+  "name": "ado-helper-smoke"
+}

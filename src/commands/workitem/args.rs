@@ -1,12 +1,13 @@
 //! All clap-derived argument structs for `ado wi …` subcommands.
 
 use clap::{Args, Subcommand};
+use std::path::PathBuf;
 
 use super::flags::FieldFlags;
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  ado wi create --title \"Fix login redirect\" --type Bug --assigned-to me\n  ado wi list --assigned-to me --state Active\n  ado wi view 123\n  ado wi update 123 --state Closed --field priority=2\n  ado wi link 123 --child 456\n  ado wi attach 123 ./screenshot.png\n\nWork item field aliases include title, state, assigned-to, tags, priority, severity, story-points, acceptance-criteria, repro-steps, and remaining-work."
+    after_help = "Examples:\n  ado wi create --title \"Fix login redirect\" --type Bug --assigned-to me\n  ado wi list --assigned-to me --state Active\n  ado wi query --wiql \"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project\"\n  ado wi view 123\n  ado wi update 123 --state Closed --field priority=2\n  ado wi link 123 --child 456\n  ado wi attach 123 ./screenshot.png\n\nWork item field aliases include title, state, assigned-to, tags, priority, severity, story-points, acceptance-criteria, repro-steps, and remaining-work."
 )]
 pub struct WorkItemArgs {
     #[command(subcommand)]
@@ -27,6 +28,12 @@ pub enum WorkItemCommand {
         after_help = "Examples:\n  ado wi list --assigned-to me\n  ado wi ls --state Active --type Bug\n  ado wi list --search login --output table"
     )]
     List(ListArgs),
+
+    /// Run a raw WIQL query and show matching work items
+    #[command(
+        after_help = "Examples:\n  ado wi query --wiql \"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project ORDER BY [System.ChangedDate] DESC\"\n  ado wi query --file bugs.wiql --output table\n\nPass exactly one query source: --wiql for inline WIQL or --file for a .wiql file."
+    )]
+    Query(QueryArgs),
 
     /// View details of a work item
     #[command(
@@ -128,6 +135,22 @@ pub struct ListArgs {
     /// Free-text search on description (WIQL CONTAINS on System.Description)
     #[arg(long, value_name = "TERM")]
     pub search_body: Option<String>,
+
+    /// Project (defaults to configured project)
+    #[arg(long, value_name = "PROJECT")]
+    pub project: Option<String>,
+}
+
+#[derive(Args)]
+#[command(group(clap::ArgGroup::new("source").required(true).multiple(false).args(["wiql", "file"])))]
+pub struct QueryArgs {
+    /// Inline WIQL query text
+    #[arg(long, value_name = "WIQL")]
+    pub wiql: Option<String>,
+
+    /// Read WIQL query text from a file
+    #[arg(long, value_name = "PATH", value_hint = clap::ValueHint::FilePath)]
+    pub file: Option<PathBuf>,
 
     /// Project (defaults to configured project)
     #[arg(long, value_name = "PROJECT")]

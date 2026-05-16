@@ -1,0 +1,47 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "defaultBranch": "refs/heads/main",
+      "id": "a818816d-f5f0-4660-b47c-a0fa45a7dae3",
+      "isDisabled": false,
+      "isInMaintenance": false,
+      "name": "ado-helper",
+      "project": {
+        "id": "4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c",
+        "lastUpdateTime": "2026-05-16T00:11:04.44Z",
+        "name": "development",
+        "revision": 19,
+        "state": "wellFormed",
+        "url": "https://dev.azure.com/jacobragsdale/_apis/projects/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c",
+        "visibility": "private"
+      },
+      "remoteUrl": "https://jacobragsdale@dev.azure.com/jacobragsdale/development/_git/ado-helper",
+      "size": 0,
+      "sshUrl": "git@ssh.dev.azure.com:v3/jacobragsdale/development/ado-helper",
+      "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/git/repositories/a818816d-f5f0-4660-b47c-a0fa45a7dae3",
+      "webUrl": "https://dev.azure.com/jacobragsdale/development/_git/ado-helper"
+    },
+    {
+      "defaultBranch": "refs/heads/main",
+      "id": "07172dbb-fc89-40a3-bcc3-ca071dd1580f",
+      "isDisabled": false,
+      "isInMaintenance": false,
+      "name": "development",
+      "project": {
+        "id": "4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c",
+        "lastUpdateTime": "2026-05-16T00:11:04.44Z",
+        "name": "development",
+        "revision": 19,
+        "state": "wellFormed",
+        "url": "https://dev.azure.com/jacobragsdale/_apis/projects/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c",
+        "visibility": "private"
+      },
+      "remoteUrl": "https://jacobragsdale@dev.azure.com/jacobragsdale/development/_git/development",
+      "size": 190,
+      "sshUrl": "git@ssh.dev.azure.com:v3/jacobragsdale/development/development",
+      "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/git/repositories/07172dbb-fc89-40a3-bcc3-ca071dd1580f",
+      "webUrl": "https://dev.azure.com/jacobragsdale/development/_git/development"
+    }
+  ]
+}

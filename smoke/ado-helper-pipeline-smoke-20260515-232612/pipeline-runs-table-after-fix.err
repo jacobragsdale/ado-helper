@@ -1,0 +1,3 @@
+   Compiling ado v0.1.0 (/Users/jacob/Development/ado-helper)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.65s
+     Running `target/debug/ado pipeline runs 2 --branch main --max 5 --output table`

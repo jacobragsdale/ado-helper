@@ -1,0 +1,55 @@
+{
+  "_links": {
+    "pipeline": {
+      "href": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/pipelines/2?revision=1"
+    },
+    "pipeline.web": {
+      "href": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_build/definition?definitionId=2"
+    },
+    "self": {
+      "href": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/pipelines/2/runs/3"
+    },
+    "web": {
+      "href": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_build/results?buildId=3"
+    }
+  },
+  "createdDate": "2026-05-16T04:31:30.9655386Z",
+  "finishedDate": "2026-05-16T04:31:34.7527098Z",
+  "id": 3,
+  "name": "20260516.1",
+  "pipeline": {
+    "folder": "\\",
+    "id": 2,
+    "name": "ado-helper-smoke",
+    "revision": 1,
+    "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/pipelines/2?revision=1"
+  },
+  "resources": {
+    "repositories": {
+      "self": {
+        "refName": "refs/heads/main",
+        "repository": {
+          "fullName": "development/ado-helper",
+          "id": "a818816d-f5f0-4660-b47c-a0fa45a7dae3",
+          "type": "azureReposGit"
+        },
+        "version": "aae85a3eeaf1a6e017ce184591724e577c49c436"
+      }
+    }
+  },
+  "result": "failed",
+  "state": "completed",
+  "tags": [],
+  "templateParameters": {
+    "environment": "dev"
+  },
+  "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/pipelines/2/runs/3",
+  "yamlDetails": {
+    "expandedYamlUrl": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/build/builds/3/logs/1",
+    "rootYamlFile": {
+      "ref": "refs/heads/main",
+      "repoAlias": "self",
+      "yamlFile": "azure-pipelines.ado-helper-smoke.yml"
+    }
+  }
+}
