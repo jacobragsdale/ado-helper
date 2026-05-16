@@ -1,0 +1,33 @@
+Clone a repository to the current directory (uses ADO_PAT for auth)
+
+Usage: ado repo clone [OPTIONS] <NAME> [DEST]
+
+Arguments:
+  <NAME>
+          Name of the repository to clone
+
+  [DEST]
+          Destination directory (defaults to ./<name>)
+
+Options:
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --project <PROJECT>
+          Project the repo belongs to (defaults to configured project)
+
+      --keep-pat-in-remote
+          Leave the PAT baked into the cloned remote URL (useful for CI). By default, the remote is rewritten to the credential-free URL after clone
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')

@@ -1,0 +1,38 @@
+{
+  "id": 7,
+  "status": "closed",
+  "comments": [
+    {
+      "id": 1,
+      "parentCommentId": 0,
+      "author": {
+        "displayName": "Microsoft.VisualStudio.Services.TFS",
+        "uniqueName": "",
+        "id": "00000002-0000-8888-8000-000000000000"
+      },
+      "content": "Jacob Ragsdale joined as a reviewer",
+      "commentType": "system",
+      "publishedDate": "2026-05-16T03:12:45.117Z",
+      "lastUpdatedDate": "2026-05-16T03:12:45.117Z",
+      "isDeleted": false
+    },
+    {
+      "id": 2,
+      "parentCommentId": 1,
+      "author": {
+        "displayName": "Jacob Ragsdale",
+        "uniqueName": "jacobragsdale@protonmail.com",
+        "id": "9914f7cf-b458-6698-8928-51e02a5c340f"
+      },
+      "content": "Smoke thread reply for ado-helper-smoke-20260515-220926",
+      "commentType": "text",
+      "publishedDate": "2026-05-16T03:13:00.43Z",
+      "lastUpdatedDate": "2026-05-16T03:13:00.43Z",
+      "isDeleted": false
+    }
+  ],
+  "threadContext": null,
+  "publishedDate": "2026-05-16T03:12:45.117Z",
+  "lastUpdatedDate": "2026-05-16T03:13:00.797Z",
+  "isDeleted": false
+}

@@ -2,47 +2,6 @@
 
 Goal: make the code easier to change, add focused low-cost tests, then run a real Azure DevOps smoke test against the configured project and validate every command path.
 
-## 1. Baseline And Guardrails
-
-- Keep any current code changes intact. `src/commands/pr.rs` is already modified in the working tree, so inspect it carefully before editing.
-- Run the baseline checks:
-  - `cargo fmt --check`
-  - `cargo clippy --all-targets -- -D warnings`
-  - `cargo test`
-- Capture the command surface from `ado --help` plus each top-level command help so the smoke checklist stays tied to the actual CLI.
-- Do not print or commit secrets. Use the existing `.env` loading path for `ADO_ORG_URL`, `ADO_PROJECT`, `ADO_PAT`, and optionally `ADO_REPO`.
-
-## 2. Cleanup Pass
-
-- Split pure parsing/formatting helpers away from network and process code where it is cheap:
-  - PR: repo remote parsing, PR field alias resolution, thread status/location formatting, comment preview truncation.
-  - Pipeline: pipeline selector logic separate from ADO fetching, variable body construction separate from POST.
-  - Work items: WIQL clause construction, relation selection, attachment filename/path encoding.
-  - Repo: clone URL credential injection and repo lookup result formatting.
-- Fix obvious small correctness issues while staying scoped:
-  - Percent-encoding should encode UTF-8 bytes, not Unicode scalar values.
-  - Truncation helpers should avoid slicing strings on non-character byte boundaries.
-  - Project/repo path segments should be consistently encoded anywhere user-provided names enter URLs.
-- Normalize repeated request patterns:
-  - Add a `patch_json` helper to `AdoClient` for PR/comment endpoints that need `application/json`.
-  - Keep `patch_json_patch` only for work item JSON Patch endpoints.
-- Keep command behavior stable. This pass should make the existing commands easier to test, not redesign the CLI.
-
-## 3. Simple Tests
-
-- Add unit tests for pure helpers first:
-  - `fields::split_field_arg` and `coerce_value` edge cases already exist; add whitespace, negative number, and float/string ambiguity cases if useful.
-  - `repo::inject_pat` with existing password/userinfo, trailing `.git`, and non-ADO HTTPS URL.
-  - `pr::resolve_pr_field`, `strip_refs_heads`, `comment_preview`, `thread_status_label`, `thread_location`, and a pure repo-name-from-remote helper after refactor.
-  - `workitem::helpers::encode_path`, `escape_wiql`, `field_str`, and `workitem_url`.
-  - `workitem::flags::resolve_field_name` for common aliases and unknown alias errors.
-- Add request-body construction tests without hitting ADO:
-  - PR create/update `--field` overrides.
-  - Pipeline run variables and branch ref body.
-  - Work item relation ops for parent, child, related, predecessor, successor, and hyperlink.
-- Add CLI parse smoke tests with `clap::CommandFactory` or `trycmd` only if the unit tests leave gaps. Keep them small.
-- Target: get from 5 tests to roughly 20-30 fast tests before adding heavier integration fixtures.
-
 ## 4. Real ADO Smoke Test Setup
 
 - Use one disposable prefix for everything:

@@ -38,7 +38,14 @@ pub fn print_table(headers: &[&str], rows: &[Vec<String>]) {
         }
     }
 
-    print_row(headers.iter().map(|h| h.to_string()).collect::<Vec<_>>().as_slice(), &widths);
+    print_row(
+        headers
+            .iter()
+            .map(|h| h.to_string())
+            .collect::<Vec<_>>()
+            .as_slice(),
+        &widths,
+    );
     let sep: Vec<String> = widths.iter().map(|w| "─".repeat(*w)).collect();
     print_row(&sep, &widths);
     for row in rows {

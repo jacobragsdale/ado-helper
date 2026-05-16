@@ -1,0 +1,12 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/main.rs (target/debug/deps/ado-8ae9a02e18ad27d9)
+
+running 5 tests
+test commands::repo::tests::inject_pat_handles_no_userinfo ... ok
+test commands::repo::tests::inject_pat_replaces_existing_userinfo ... ok
+test commands::workitem::flags::tests::alias_resolution ... ok
+test fields::tests::split_field_arg_basic ... ok
+test fields::tests::coerce_bools_numbers_strings ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

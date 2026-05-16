@@ -1,0 +1,3 @@
+To https://dev.azure.com/jacobragsdale/development/_git/ado-helper-smoke-20260515-220926-repo
+ * [new branch]      ado-helper-smoke-20260515-220926-branch -> ado-helper-smoke-20260515-220926-branch
+branch 'ado-helper-smoke-20260515-220926-branch' set up to track 'origin/ado-helper-smoke-20260515-220926-branch'.

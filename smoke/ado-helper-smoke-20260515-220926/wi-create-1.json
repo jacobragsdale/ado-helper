@@ -1,0 +1,47 @@
+{
+  "id": 4,
+  "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/4",
+  "fields": {
+    "Microsoft.VSTS.Common.Priority": 2,
+    "Microsoft.VSTS.Common.StateChangeDate": "2026-05-16T03:10:43.653Z",
+    "System.AreaPath": "development",
+    "System.ChangedBy": {
+      "_links": {
+        "avatar": {
+          "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+        }
+      },
+      "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+      "displayName": "Jacob Ragsdale",
+      "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+      "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+      "uniqueName": "jacobragsdale@protonmail.com",
+      "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+    },
+    "System.ChangedDate": "2026-05-16T03:10:43.653Z",
+    "System.CommentCount": 0,
+    "System.CreatedBy": {
+      "_links": {
+        "avatar": {
+          "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+        }
+      },
+      "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+      "displayName": "Jacob Ragsdale",
+      "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+      "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+      "uniqueName": "jacobragsdale@protonmail.com",
+      "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+    },
+    "System.CreatedDate": "2026-05-16T03:10:43.653Z",
+    "System.Description": "Smoke test disposable work item for ado-helper-smoke-20260515-220926",
+    "System.IterationPath": "development",
+    "System.Reason": "Added to backlog",
+    "System.State": "To Do",
+    "System.Tags": "ado-helper-smoke-20260515-220926",
+    "System.TeamProject": "development",
+    "System.Title": "ado-helper-smoke-20260515-220926 work item",
+    "System.WorkItemType": "Task"
+  },
+  "relations": []
+}

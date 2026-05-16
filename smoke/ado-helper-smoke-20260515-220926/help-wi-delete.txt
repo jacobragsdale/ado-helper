@@ -1,0 +1,30 @@
+Delete a work item (soft-delete to recycle bin by default)
+
+Usage: ado work-item delete [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+          Work item ID
+
+Options:
+      --destroy
+          Permanently destroy instead of moving to the recycle bin
+
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --project <PROJECT>
+          Override the default project from config
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')

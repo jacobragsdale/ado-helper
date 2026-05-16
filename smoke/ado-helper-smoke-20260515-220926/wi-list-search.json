@@ -1,0 +1,24 @@
+[
+  {
+    "id": 4,
+    "url": "https://dev.azure.com/jacobragsdale/_apis/wit/workItems/4",
+    "fields": {
+      "System.Id": 4,
+      "System.State": "To Do",
+      "System.Title": "ado-helper-smoke-20260515-220926 work item",
+      "System.WorkItemType": "Task"
+    },
+    "relations": []
+  },
+  {
+    "id": 5,
+    "url": "https://dev.azure.com/jacobragsdale/_apis/wit/workItems/5",
+    "fields": {
+      "System.Id": 5,
+      "System.State": "To Do",
+      "System.Title": "ado-helper-smoke-20260515-220926 linked work item",
+      "System.WorkItemType": "Task"
+    },
+    "relations": []
+  }
+]

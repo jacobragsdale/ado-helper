@@ -1,0 +1,11 @@
+[
+    {
+        "rel": "System.LinkTypes.Related",
+        "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/5",
+        "attributes": {
+            "comment": "Smoke relation ado-helper-smoke-20260515-220926",
+            "isLocked": false,
+            "name": "Related"
+        }
+    }
+]

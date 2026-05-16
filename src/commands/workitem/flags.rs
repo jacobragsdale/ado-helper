@@ -111,12 +111,24 @@ pub async fn build_field_ops(f: &FieldFlags, client: &AdoClient) -> Result<Vec<P
     use std::collections::BTreeMap;
     let mut by_field: BTreeMap<String, serde_json::Value> = BTreeMap::new();
 
-    if let Some(v) = &f.title       { by_field.insert("System.Title".into(),       json!(v)); }
-    if let Some(v) = &f.state       { by_field.insert("System.State".into(),       json!(v)); }
-    if let Some(v) = &f.description { by_field.insert("System.Description".into(), json!(v)); }
-    if let Some(v) = &f.iteration   { by_field.insert("System.IterationPath".into(), json!(v)); }
-    if let Some(v) = &f.area        { by_field.insert("System.AreaPath".into(),    json!(v)); }
-    if let Some(v) = &f.tags        { by_field.insert("System.Tags".into(),        json!(v)); }
+    if let Some(v) = &f.title {
+        by_field.insert("System.Title".into(), json!(v));
+    }
+    if let Some(v) = &f.state {
+        by_field.insert("System.State".into(), json!(v));
+    }
+    if let Some(v) = &f.description {
+        by_field.insert("System.Description".into(), json!(v));
+    }
+    if let Some(v) = &f.iteration {
+        by_field.insert("System.IterationPath".into(), json!(v));
+    }
+    if let Some(v) = &f.area {
+        by_field.insert("System.AreaPath".into(), json!(v));
+    }
+    if let Some(v) = &f.tags {
+        by_field.insert("System.Tags".into(), json!(v));
+    }
     if let Some(v) = &f.priority {
         by_field.insert("Microsoft.VSTS.Common.Priority".into(), coerce_value(v));
     }
@@ -124,7 +136,10 @@ pub async fn build_field_ops(f: &FieldFlags, client: &AdoClient) -> Result<Vec<P
         by_field.insert("Microsoft.VSTS.Common.Severity".into(), json!(v));
     }
     if let Some(v) = &f.story_points {
-        by_field.insert("Microsoft.VSTS.Scheduling.StoryPoints".into(), coerce_value(v));
+        by_field.insert(
+            "Microsoft.VSTS.Scheduling.StoryPoints".into(),
+            coerce_value(v),
+        );
     }
     if let Some(v) = &f.acceptance_criteria {
         by_field.insert("Microsoft.VSTS.Common.AcceptanceCriteria".into(), json!(v));
@@ -145,7 +160,11 @@ pub async fn build_field_ops(f: &FieldFlags, client: &AdoClient) -> Result<Vec<P
         // For System.AssignedTo via --field, also resolve "me".
         let final_value = if resolved_name == "System.AssignedTo" {
             if let Some(s) = coerced.as_str() {
-                if s.is_empty() { json!("") } else { json!(resolve_user(client, s).await?) }
+                if s.is_empty() {
+                    json!("")
+                } else {
+                    json!(resolve_user(client, s).await?)
+                }
             } else {
                 coerced
             }
@@ -172,10 +191,19 @@ mod tests {
     #[test]
     fn alias_resolution() {
         assert_eq!(resolve_field_name("title").unwrap(), "System.Title");
-        assert_eq!(resolve_field_name("story-points").unwrap(), "Microsoft.VSTS.Scheduling.StoryPoints");
-        assert_eq!(resolve_field_name("story_points").unwrap(), "Microsoft.VSTS.Scheduling.StoryPoints");
+        assert_eq!(
+            resolve_field_name("story-points").unwrap(),
+            "Microsoft.VSTS.Scheduling.StoryPoints"
+        );
+        assert_eq!(
+            resolve_field_name("story_points").unwrap(),
+            "Microsoft.VSTS.Scheduling.StoryPoints"
+        );
         // already-qualified passes through
-        assert_eq!(resolve_field_name("System.Custom.Foo").unwrap(), "System.Custom.Foo");
+        assert_eq!(
+            resolve_field_name("System.Custom.Foo").unwrap(),
+            "System.Custom.Foo"
+        );
         assert!(resolve_field_name("nope").is_err());
     }
 }

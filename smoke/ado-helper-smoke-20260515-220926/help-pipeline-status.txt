@@ -1,0 +1,33 @@
+Get the status of a pipeline run
+
+Usage: ado pipeline status [OPTIONS] --pipeline-id <PIPELINE_ID> <RUN_ID>
+
+Arguments:
+  <RUN_ID>
+          Run ID returned by `ado pipeline run`
+
+Options:
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --pipeline-id <PIPELINE_ID>
+          Pipeline ID (required to look up a specific run)
+
+      --watch
+          Poll every 10 seconds until the run finishes
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+      --project <PROJECT>
+          Project (defaults to configured project)
+
+  -h, --help
+          Print help (see a summary with '-h')

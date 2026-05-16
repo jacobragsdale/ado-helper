@@ -3,8 +3,9 @@ use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::process::Command;
+use std::time::Duration;
 
-use crate::client::AdoClient;
+use crate::client::{AdoClient, encode_path_segment};
 use crate::fields::{coerce_value, split_field_arg};
 use crate::output::{self, OutputFormat};
 
@@ -394,14 +395,14 @@ pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Res
         PrCommand::List(a) => list(a, client, output).await,
         PrCommand::View(a) => view(a, client, output).await,
         PrCommand::Update(a) => update(a, client, output).await,
-        PrCommand::Approve(a) => approve(a, client).await,
+        PrCommand::Approve(a) => approve(a, client, output).await,
         PrCommand::Comment(a) => comment(a, client, output).await,
         PrCommand::Threads(a) => threads(a, client, output).await,
         PrCommand::ThreadReply(a) => thread_reply(a, client, output).await,
         PrCommand::ThreadResolve(a) => thread_resolve(a, client, output).await,
         PrCommand::Complete(a) => complete(a, client, output).await,
-        PrCommand::Abandon(a) => abandon(a, client).await,
-        PrCommand::Reactivate(a) => reactivate(a, client).await,
+        PrCommand::Abandon(a) => abandon(a, client, output).await,
+        PrCommand::Reactivate(a) => reactivate(a, client, output).await,
         PrCommand::Open(a) => open(a, client).await,
     }
 }
@@ -411,14 +412,18 @@ pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Res
 async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     let repo = resolve_repo_optional(args.repo.as_deref());
     let status = &args.status;
+    let project = project_segment(client);
     let path = match &repo {
         Some(r) => format!(
             "{}/_apis/git/repositories/{}/pullrequests?searchCriteria.status={}&api-version=7.1",
-            client.project, r, status
+            project,
+            repo_segment(r),
+            encode_path_segment(status)
         ),
         None => format!(
             "{}/_apis/git/pullrequests?searchCriteria.status={}&api-version=7.1",
-            client.project, status
+            project,
+            encode_path_segment(status)
         ),
     };
 
@@ -429,7 +434,7 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
         OutputFormat::Text => {
             if resp.value.is_empty() {
                 let scope = repo.as_deref().unwrap_or(&client.project);
-                println!("(no {} PRs in {scope})", status);
+                println!("(no {status} PRs in {scope})");
                 return Ok(());
             }
             let lines: Vec<String> = resp
@@ -450,7 +455,7 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
         OutputFormat::Table => {
             if resp.value.is_empty() {
                 let scope = repo.as_deref().unwrap_or(&client.project);
-                println!("(no {} PRs in {scope})", status);
+                println!("(no {status} PRs in {scope})");
                 return Ok(());
             }
             let rows: Vec<Vec<String>> = resp
@@ -487,7 +492,9 @@ async fn view(args: ViewArgs, client: &AdoClient, output: &OutputFormat) -> Resu
     let repo = resolve_repo_required(args.repo.as_deref())?;
     let path = format!(
         "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
-        client.project, repo, args.id
+        project_segment(client),
+        repo_segment(&repo),
+        args.id
     );
     let pr: PullRequest = client.get_json(&path).await?;
 
@@ -554,7 +561,8 @@ async fn create(args: CreateArgs, client: &AdoClient, output: &OutputFormat) -> 
 
     let path = format!(
         "{}/_apis/git/repositories/{}/pullrequests?api-version=7.1",
-        client.project, repo
+        project_segment(client),
+        repo_segment(&repo)
     );
     let pr: PullRequest = client.post_json(&path, &body).await?;
 
@@ -590,9 +598,11 @@ async fn update(args: UpdateArgs, client: &AdoClient, output: &OutputFormat) -> 
 
     let path = format!(
         "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
-        client.project, repo, args.id
+        project_segment(client),
+        repo_segment(&repo),
+        args.id
     );
-    let pr: PullRequest = patch_json(client, &path, &value).await?;
+    let pr: PullRequest = client.patch_json(&path, &value).await?;
 
     match output {
         OutputFormat::Json => output::print_json(&pr)?,
@@ -603,12 +613,15 @@ async fn update(args: UpdateArgs, client: &AdoClient, output: &OutputFormat) -> 
 
 // ── approve ─────────────────────────────────────────────────────────────────
 
-async fn approve(args: ApproveArgs, client: &AdoClient) -> Result<()> {
+async fn approve(args: ApproveArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     let repo = resolve_repo_required(args.repo.as_deref())?;
     let user_id = self_identity_id(client).await?;
     let path = format!(
         "{}/_apis/git/repositories/{}/pullrequests/{}/reviewers/{}?api-version=7.1",
-        client.project, repo, args.id, user_id
+        project_segment(client),
+        repo_segment(&repo),
+        args.id,
+        encode_path_segment(&user_id)
     );
     let resp = client
         .put(&path) // helper added below
@@ -616,16 +629,22 @@ async fn approve(args: ApproveArgs, client: &AdoClient) -> Result<()> {
         .json(&json!({ "vote": args.vote }))
         .send()
         .await?;
-    AdoClient::check_response(resp).await?;
+    let resp = AdoClient::check_response(resp).await?;
+    let reviewer: serde_json::Value = resp.json().await.context("failed to parse JSON response")?;
 
-    let action = match args.vote {
-        v if v >= 10 => "Approved",
-        v if v >= 5 => "Approved (with suggestions)",
-        v if v == 0 => "Reset vote on",
-        v if v >= -5 => "Marked waiting on",
-        _ => "Rejected",
-    };
-    println!("{action} PR #{} (vote={})", args.id, args.vote);
+    match output {
+        OutputFormat::Json => output::print_json(&reviewer)?,
+        OutputFormat::Text | OutputFormat::Table => {
+            let action = match args.vote {
+                v if v >= 10 => "Approved",
+                v if v >= 5 => "Approved (with suggestions)",
+                0 => "Reset vote on",
+                v if v >= -5 => "Marked waiting on",
+                _ => "Rejected",
+            };
+            println!("{action} PR #{} (vote={})", args.id, args.vote);
+        }
+    }
     Ok(())
 }
 
@@ -701,7 +720,7 @@ async fn thread_resolve(
 ) -> Result<()> {
     let repo = resolve_repo_required(args.repo.as_deref())?;
     let path = pr_thread_path(client, &repo, args.id, args.thread_id);
-    let thread: PrThread = patch_json(client, &path, &json!({ "status": 4 })).await?;
+    let thread: PrThread = client.patch_json(&path, &json!({ "status": 4 })).await?;
 
     match output {
         OutputFormat::Json => output::print_json(&thread)?,
@@ -716,18 +735,41 @@ async fn thread_resolve(
 
 async fn complete(args: CompleteArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     let repo = resolve_repo_required(args.repo.as_deref())?;
+    let path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
+        project_segment(client),
+        repo_segment(&repo),
+        args.id
+    );
+    let current: serde_json::Value = client.get_json(&path).await?;
+    let last_merge_source_commit = current
+        .get("lastMergeSourceCommit")
+        .cloned()
+        .context("PR response missing lastMergeSourceCommit; cannot complete safely")?;
     let body = json!({
         "status": "completed",
+        "lastMergeSourceCommit": last_merge_source_commit,
         "completionOptions": {
             "deleteSourceBranch": args.delete_source_branch,
             "mergeStrategy": args.merge_strategy,
         }
     });
-    let path = format!(
-        "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
-        client.project, repo, args.id
-    );
-    let pr: PullRequest = patch_json(client, &path, &body).await?;
+    let mut pr: PullRequest = client.patch_json(&path, &body).await?;
+    for _ in 0..10 {
+        if pr.status == "completed" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        pr = client.get_json(&path).await?;
+    }
+    if pr.status != "completed" {
+        let merge = pr.merge_status.as_deref().unwrap_or("unknown");
+        bail!(
+            "PR #{} did not complete; status={}, mergeStatus={merge}",
+            pr.id,
+            pr.status
+        );
+    }
     match output {
         OutputFormat::Json => output::print_json(&pr)?,
         OutputFormat::Text | OutputFormat::Table => {
@@ -737,25 +779,39 @@ async fn complete(args: CompleteArgs, client: &AdoClient, output: &OutputFormat)
     Ok(())
 }
 
-async fn abandon(args: AbandonArgs, client: &AdoClient) -> Result<()> {
+async fn abandon(args: AbandonArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     let repo = resolve_repo_required(args.repo.as_deref())?;
     let path = format!(
         "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
-        client.project, repo, args.id
+        project_segment(client),
+        repo_segment(&repo),
+        args.id
     );
-    let _: PullRequest = patch_json(client, &path, &json!({ "status": "abandoned" })).await?;
-    println!("Abandoned PR #{}", args.id);
+    let pr: PullRequest = client
+        .patch_json(&path, &json!({ "status": "abandoned" }))
+        .await?;
+    match output {
+        OutputFormat::Json => output::print_json(&pr)?,
+        OutputFormat::Text | OutputFormat::Table => println!("Abandoned PR #{}", args.id),
+    }
     Ok(())
 }
 
-async fn reactivate(args: ReactivateArgs, client: &AdoClient) -> Result<()> {
+async fn reactivate(args: ReactivateArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     let repo = resolve_repo_required(args.repo.as_deref())?;
     let path = format!(
         "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
-        client.project, repo, args.id
+        project_segment(client),
+        repo_segment(&repo),
+        args.id
     );
-    let _: PullRequest = patch_json(client, &path, &json!({ "status": "active" })).await?;
-    println!("Reactivated PR #{}", args.id);
+    let pr: PullRequest = client
+        .patch_json(&path, &json!({ "status": "active" }))
+        .await?;
+    match output {
+        OutputFormat::Json => output::print_json(&pr)?,
+        OutputFormat::Text | OutputFormat::Table => println!("Reactivated PR #{}", args.id),
+    }
     Ok(())
 }
 
@@ -773,29 +829,48 @@ async fn open(args: OpenArgs, client: &AdoClient) -> Result<()> {
 fn web_url(client: &AdoClient, repo: &str, pr_id: u32) -> String {
     format!(
         "{}/{}/_git/{}/pullrequest/{}",
-        client.org, client.project, repo, pr_id
+        client.org,
+        project_segment(client),
+        repo_segment(repo),
+        pr_id
     )
 }
 
 fn pr_threads_path(client: &AdoClient, repo: &str, pr_id: u32) -> String {
     format!(
         "{}/_apis/git/repositories/{}/pullRequests/{}/threads?api-version=7.1",
-        client.project, repo, pr_id
+        project_segment(client),
+        repo_segment(repo),
+        pr_id
     )
 }
 
 fn pr_thread_path(client: &AdoClient, repo: &str, pr_id: u32, thread_id: u32) -> String {
     format!(
         "{}/_apis/git/repositories/{}/pullRequests/{}/threads/{}?api-version=7.1",
-        client.project, repo, pr_id, thread_id
+        project_segment(client),
+        repo_segment(repo),
+        pr_id,
+        thread_id
     )
 }
 
 fn pr_thread_comments_path(client: &AdoClient, repo: &str, pr_id: u32, thread_id: u32) -> String {
     format!(
         "{}/_apis/git/repositories/{}/pullRequests/{}/threads/{}/comments?api-version=7.1",
-        client.project, repo, pr_id, thread_id
+        project_segment(client),
+        repo_segment(repo),
+        pr_id,
+        thread_id
     )
+}
+
+fn project_segment(client: &AdoClient) -> String {
+    encode_path_segment(&client.project)
+}
+
+fn repo_segment(repo: &str) -> String {
+    encode_path_segment(repo)
 }
 
 fn strip_refs_heads(s: &str) -> &str {
@@ -945,25 +1020,6 @@ fn comment_preview(content: &str) -> String {
     preview
 }
 
-/// PATCH with application/json (PR endpoints take a flat JSON body, not JSON Patch).
-async fn patch_json<B: serde::Serialize, T: serde::de::DeserializeOwned>(
-    client: &AdoClient,
-    path: &str,
-    body: &B,
-) -> Result<T> {
-    let resp = client
-        .patch(path)
-        .header("Content-Type", "application/json")
-        .json(body)
-        .send()
-        .await
-        .context("PATCH request failed")?;
-    let resp = AdoClient::check_response(resp).await?;
-    resp.json::<T>()
-        .await
-        .context("failed to parse JSON response")
-}
-
 /// Apply `--field name=value` entries into a JSON object body. Names are
 /// resolved through `resolve_pr_field` (alias map) before insertion.
 fn apply_fields(body: &mut serde_json::Value, fields: &[String]) -> Result<()> {
@@ -1016,7 +1072,7 @@ async fn self_identity_id(client: &AdoClient) -> Result<String> {
 async fn resolve_identity(client: &AdoClient, name: &str) -> Result<String> {
     let path = format!(
         "_apis/identities?searchFilter=General&filterValue={}&api-version=6.0",
-        url_encode(name)
+        encode_path_segment(name)
     );
     let resp: IdentitiesResponse = client.get_json(&path).await?;
     let mut iter = resp.value.into_iter().filter(|i| !i.id.is_empty());
@@ -1030,16 +1086,6 @@ async fn resolve_identity(client: &AdoClient, name: &str) -> Result<String> {
         );
     }
     Ok(first.id)
-}
-
-fn url_encode(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
-            ' ' => "%20".into(),
-            c => format!("%{:02X}", c as u32),
-        })
-        .collect()
 }
 
 // ── repo / branch resolution ────────────────────────────────────────────────
@@ -1067,9 +1113,18 @@ fn repo_from_remote() -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    let url = url.trim_end_matches(".git");
-    url.rsplit('/')
+    let url = String::from_utf8_lossy(&out.stdout);
+    repo_name_from_remote_url(url.trim())
+}
+
+fn repo_name_from_remote_url(remote_url: &str) -> Option<String> {
+    let clean = remote_url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(remote_url)
+        .trim_end_matches(".git");
+    clean
+        .rsplit(['/', ':'])
         .next()
         .map(String::from)
         .filter(|s| !s.is_empty())

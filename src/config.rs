@@ -86,7 +86,10 @@ pub async fn run(args: ConfigArgs) -> Result<()> {
             let path = Config::path()?;
             println!("config file: {}", path.display());
             println!("org:         {}", cfg.org.as_deref().unwrap_or("(not set)"));
-            println!("project:     {}", cfg.project.as_deref().unwrap_or("(not set)"));
+            println!(
+                "project:     {}",
+                cfg.project.as_deref().unwrap_or("(not set)")
+            );
             println!();
             println!("environment overrides (loaded from .env if present):");
             print_env("ADO_ORG_URL");

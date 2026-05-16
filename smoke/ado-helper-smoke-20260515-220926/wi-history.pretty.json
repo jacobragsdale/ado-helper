@@ -1,0 +1,497 @@
+{
+    "count": 8,
+    "value": [
+        {
+            "fields": {
+                "Microsoft.VSTS.Common.Priority": {
+                    "newValue": 2
+                },
+                "Microsoft.VSTS.Common.StateChangeDate": {
+                    "newValue": "2026-05-16T03:10:43.653Z"
+                },
+                "System.AreaId": {
+                    "newValue": 6
+                },
+                "System.AreaLevel1": {
+                    "newValue": "development"
+                },
+                "System.AreaPath": {
+                    "newValue": "development"
+                },
+                "System.AssignedTo": {},
+                "System.AuthorizedAs": {
+                    "newValue": {
+                        "_links": {
+                            "avatar": {
+                                "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                            }
+                        },
+                        "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                        "displayName": "Jacob Ragsdale",
+                        "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                        "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                        "uniqueName": "jacobragsdale@protonmail.com",
+                        "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+                    }
+                },
+                "System.AuthorizedDate": {
+                    "newValue": "2026-05-16T03:10:43.653Z"
+                },
+                "System.ChangedBy": {
+                    "newValue": {
+                        "_links": {
+                            "avatar": {
+                                "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                            }
+                        },
+                        "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                        "displayName": "Jacob Ragsdale",
+                        "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                        "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                        "uniqueName": "jacobragsdale@protonmail.com",
+                        "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+                    }
+                },
+                "System.ChangedDate": {
+                    "newValue": "2026-05-16T03:10:43.653Z"
+                },
+                "System.CommentCount": {
+                    "newValue": 0
+                },
+                "System.CreatedBy": {
+                    "newValue": {
+                        "_links": {
+                            "avatar": {
+                                "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                            }
+                        },
+                        "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                        "displayName": "Jacob Ragsdale",
+                        "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                        "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                        "uniqueName": "jacobragsdale@protonmail.com",
+                        "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+                    }
+                },
+                "System.CreatedDate": {
+                    "newValue": "2026-05-16T03:10:43.653Z"
+                },
+                "System.Description": {
+                    "newValue": "Smoke test disposable work item for ado-helper-smoke-20260515-220926"
+                },
+                "System.Id": {
+                    "newValue": 4
+                },
+                "System.IsDeleted": {
+                    "newValue": false
+                },
+                "System.IterationId": {
+                    "newValue": 6
+                },
+                "System.IterationLevel1": {
+                    "newValue": "development"
+                },
+                "System.IterationPath": {
+                    "newValue": "development"
+                },
+                "System.NodeName": {
+                    "newValue": "development"
+                },
+                "System.PersonId": {
+                    "newValue": 5960694
+                },
+                "System.Reason": {
+                    "newValue": "Added to backlog"
+                },
+                "System.Rev": {
+                    "newValue": 1
+                },
+                "System.RevisedDate": {
+                    "newValue": "2026-05-16T03:11:02.06Z"
+                },
+                "System.State": {
+                    "newValue": "To Do"
+                },
+                "System.Tags": {
+                    "newValue": "ado-helper-smoke-20260515-220926"
+                },
+                "System.TeamProject": {
+                    "newValue": "development"
+                },
+                "System.Title": {
+                    "newValue": "ado-helper-smoke-20260515-220926 work item"
+                },
+                "System.Watermark": {
+                    "newValue": 12
+                },
+                "System.WorkItemType": {
+                    "newValue": "Task"
+                }
+            },
+            "id": 1,
+            "rev": 1,
+            "revisedBy": {
+                "_links": {
+                    "avatar": {
+                        "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                    }
+                },
+                "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "displayName": "Jacob Ragsdale",
+                "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "name": "Jacob Ragsdale <jacobragsdale@protonmail.com>",
+                "uniqueName": "jacobragsdale@protonmail.com",
+                "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+            },
+            "revisedDate": "2026-05-16T03:11:02.06Z",
+            "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/4/updates/1",
+            "workItemId": 4
+        },
+        {
+            "fields": {
+                "Microsoft.VSTS.Common.ClosedBy": {
+                    "newValue": {
+                        "_links": {
+                            "avatar": {
+                                "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                            }
+                        },
+                        "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                        "displayName": "Jacob Ragsdale",
+                        "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                        "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                        "uniqueName": "jacobragsdale@protonmail.com",
+                        "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+                    }
+                },
+                "Microsoft.VSTS.Common.ClosedDate": {
+                    "newValue": "2026-05-16T03:11:02.06Z"
+                },
+                "Microsoft.VSTS.Common.StateChangeDate": {
+                    "newValue": "2026-05-16T03:11:02.06Z",
+                    "oldValue": "2026-05-16T03:10:43.653Z"
+                },
+                "System.AuthorizedDate": {
+                    "newValue": "2026-05-16T03:11:02.06Z",
+                    "oldValue": "2026-05-16T03:10:43.653Z"
+                },
+                "System.ChangedDate": {
+                    "newValue": "2026-05-16T03:11:02.06Z",
+                    "oldValue": "2026-05-16T03:10:43.653Z"
+                },
+                "System.Reason": {
+                    "newValue": "Completed",
+                    "oldValue": "Added to backlog"
+                },
+                "System.Rev": {
+                    "newValue": 2,
+                    "oldValue": 1
+                },
+                "System.RevisedDate": {
+                    "newValue": "2026-05-16T03:11:12.057Z",
+                    "oldValue": "2026-05-16T03:11:02.06Z"
+                },
+                "System.State": {
+                    "newValue": "Done",
+                    "oldValue": "To Do"
+                },
+                "System.Tags": {
+                    "newValue": "ado-helper-smoke-20260515-220926; updated",
+                    "oldValue": "ado-helper-smoke-20260515-220926"
+                },
+                "System.Watermark": {
+                    "newValue": 14,
+                    "oldValue": 12
+                }
+            },
+            "id": 2,
+            "rev": 2,
+            "revisedBy": {
+                "_links": {
+                    "avatar": {
+                        "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                    }
+                },
+                "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "displayName": "Jacob Ragsdale",
+                "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "name": "Jacob Ragsdale <jacobragsdale@protonmail.com>",
+                "uniqueName": "jacobragsdale@protonmail.com",
+                "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+            },
+            "revisedDate": "2026-05-16T03:11:12.057Z",
+            "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/4/updates/2",
+            "workItemId": 4
+        },
+        {
+            "fields": {
+                "System.AuthorizedDate": {
+                    "newValue": "2026-05-16T03:11:12.057Z",
+                    "oldValue": "2026-05-16T03:11:02.06Z"
+                },
+                "System.ChangedDate": {
+                    "newValue": "2026-05-16T03:11:12.057Z",
+                    "oldValue": "2026-05-16T03:11:02.06Z"
+                },
+                "System.CommentCount": {
+                    "newValue": 1,
+                    "oldValue": 0
+                },
+                "System.Rev": {
+                    "newValue": 3,
+                    "oldValue": 2
+                },
+                "System.RevisedDate": {
+                    "newValue": "2026-05-16T03:11:17.04Z",
+                    "oldValue": "2026-05-16T03:11:12.057Z"
+                },
+                "System.Watermark": {
+                    "newValue": 15,
+                    "oldValue": 14
+                }
+            },
+            "id": 3,
+            "rev": 3,
+            "revisedBy": {
+                "_links": {
+                    "avatar": {
+                        "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                    }
+                },
+                "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "displayName": "Jacob Ragsdale",
+                "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "name": "Jacob Ragsdale <jacobragsdale@protonmail.com>",
+                "uniqueName": "jacobragsdale@protonmail.com",
+                "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+            },
+            "revisedDate": "2026-05-16T03:11:17.04Z",
+            "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/4/updates/3",
+            "workItemId": 4
+        },
+        {
+            "fields": {
+                "System.AuthorizedDate": {
+                    "newValue": "2026-05-16T03:11:17.04Z",
+                    "oldValue": "2026-05-16T03:11:12.057Z"
+                },
+                "System.ChangedDate": {
+                    "newValue": "2026-05-16T03:11:17.04Z",
+                    "oldValue": "2026-05-16T03:11:12.057Z"
+                },
+                "System.Rev": {
+                    "newValue": 4,
+                    "oldValue": 3
+                },
+                "System.RevisedDate": {
+                    "newValue": "2026-05-16T03:11:17.863Z",
+                    "oldValue": "2026-05-16T03:11:17.04Z"
+                },
+                "System.Watermark": {
+                    "newValue": 16,
+                    "oldValue": 15
+                }
+            },
+            "id": 4,
+            "rev": 4,
+            "revisedBy": {
+                "_links": {
+                    "avatar": {
+                        "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                    }
+                },
+                "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "displayName": "Jacob Ragsdale",
+                "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "name": "Jacob Ragsdale <jacobragsdale@protonmail.com>",
+                "uniqueName": "jacobragsdale@protonmail.com",
+                "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+            },
+            "revisedDate": "2026-05-16T03:11:17.863Z",
+            "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/4/updates/4",
+            "workItemId": 4
+        },
+        {
+            "fields": {
+                "System.AuthorizedDate": {
+                    "newValue": "2026-05-16T03:11:17.863Z",
+                    "oldValue": "2026-05-16T03:11:17.04Z"
+                },
+                "System.ChangedDate": {
+                    "newValue": "2026-05-16T03:11:17.863Z",
+                    "oldValue": "2026-05-16T03:11:17.04Z"
+                },
+                "System.CommentCount": {
+                    "newValue": 0,
+                    "oldValue": 1
+                },
+                "System.History": {
+                    "newValue": ""
+                },
+                "System.Rev": {
+                    "newValue": 5,
+                    "oldValue": 4
+                },
+                "System.RevisedDate": {
+                    "newValue": "2026-05-16T03:11:38.833Z",
+                    "oldValue": "2026-05-16T03:11:17.863Z"
+                },
+                "System.Watermark": {
+                    "newValue": 17,
+                    "oldValue": 16
+                }
+            },
+            "id": 5,
+            "rev": 5,
+            "revisedBy": {
+                "_links": {
+                    "avatar": {
+                        "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                    }
+                },
+                "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "displayName": "Jacob Ragsdale",
+                "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "name": "Jacob Ragsdale <jacobragsdale@protonmail.com>",
+                "uniqueName": "jacobragsdale@protonmail.com",
+                "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+            },
+            "revisedDate": "2026-05-16T03:11:38.833Z",
+            "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/4/updates/5",
+            "workItemId": 4
+        },
+        {
+            "id": 6,
+            "relations": {
+                "added": [
+                    {
+                        "attributes": {
+                            "comment": "Smoke relation ado-helper-smoke-20260515-220926",
+                            "isLocked": false,
+                            "name": "Related"
+                        },
+                        "rel": "System.LinkTypes.Related",
+                        "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/5"
+                    }
+                ]
+            },
+            "rev": 5,
+            "revisedBy": {
+                "_links": {
+                    "avatar": {
+                        "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                    }
+                },
+                "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "displayName": "Jacob Ragsdale",
+                "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "name": "Jacob Ragsdale <jacobragsdale@protonmail.com>",
+                "uniqueName": "jacobragsdale@protonmail.com",
+                "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+            },
+            "revisedDate": "2026-05-16T03:11:23.477Z",
+            "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/4/updates/6",
+            "workItemId": 4
+        },
+        {
+            "id": 7,
+            "relations": {
+                "removed": [
+                    {
+                        "attributes": {
+                            "comment": "Smoke relation ado-helper-smoke-20260515-220926",
+                            "isLocked": false,
+                            "name": "Related"
+                        },
+                        "rel": "System.LinkTypes.Related",
+                        "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/5"
+                    }
+                ]
+            },
+            "rev": 5,
+            "revisedBy": {
+                "_links": {
+                    "avatar": {
+                        "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                    }
+                },
+                "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "displayName": "Jacob Ragsdale",
+                "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "name": "Jacob Ragsdale <jacobragsdale@protonmail.com>",
+                "uniqueName": "jacobragsdale@protonmail.com",
+                "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+            },
+            "revisedDate": "2026-05-16T03:11:33.457Z",
+            "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/4/updates/7",
+            "workItemId": 4
+        },
+        {
+            "fields": {
+                "System.AuthorizedDate": {
+                    "newValue": "2026-05-16T03:11:38.833Z",
+                    "oldValue": "2026-05-16T03:11:17.863Z"
+                },
+                "System.ChangedDate": {
+                    "newValue": "2026-05-16T03:11:38.833Z",
+                    "oldValue": "2026-05-16T03:11:17.863Z"
+                },
+                "System.Rev": {
+                    "newValue": 6,
+                    "oldValue": 5
+                },
+                "System.RevisedDate": {
+                    "newValue": "9999-01-01T00:00:00Z",
+                    "oldValue": "2026-05-16T03:11:38.833Z"
+                },
+                "System.Watermark": {
+                    "newValue": 18,
+                    "oldValue": 17
+                }
+            },
+            "id": 8,
+            "relations": {
+                "added": [
+                    {
+                        "attributes": {
+                            "authorizedDate": "2026-05-16T03:11:38.833Z",
+                            "id": 5956457,
+                            "name": "attachment.txt",
+                            "resourceCreatedDate": "2026-05-16T03:11:38.833Z",
+                            "resourceModifiedDate": "2026-05-16T03:11:38.833Z",
+                            "resourceSize": 54,
+                            "revisedDate": "9999-01-01T00:00:00Z"
+                        },
+                        "rel": "AttachedFile",
+                        "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/attachments/d7b7ce14-0420-4631-b671-c2bb9c70fb32"
+                    }
+                ]
+            },
+            "rev": 6,
+            "revisedBy": {
+                "_links": {
+                    "avatar": {
+                        "href": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm"
+                    }
+                },
+                "descriptor": "msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "displayName": "Jacob Ragsdale",
+                "id": "9914f7cf-b458-6698-8928-51e02a5c340f",
+                "imageUrl": "https://dev.azure.com/jacobragsdale/_apis/GraphProfile/MemberAvatars/msa.OTkxNGY3Y2YtYjQ1OC03Njk4LTg5MjgtNTFlMDJhNWMzNDBm",
+                "name": "Jacob Ragsdale <jacobragsdale@protonmail.com>",
+                "uniqueName": "jacobragsdale@protonmail.com",
+                "url": "https://spsprodwus31.vssps.visualstudio.com/A84a0d315-00a3-4131-97d9-b58a111e6664/_apis/Identities/9914f7cf-b458-6698-8928-51e02a5c340f"
+            },
+            "revisedDate": "9999-01-01T00:00:00Z",
+            "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/wit/workItems/4/updates/8",
+            "workItemId": 4
+        }
+    ]
+}

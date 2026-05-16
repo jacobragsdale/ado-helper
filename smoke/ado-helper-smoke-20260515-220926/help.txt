@@ -1,0 +1,34 @@
+Azure DevOps CLI — manage repos, PRs, pipelines, and work items
+
+Usage: ado [OPTIONS] <COMMAND>
+
+Commands:
+  config     Manage configuration (org URL, default project)
+  repo       Manage Git repositories
+  pr         Manage pull requests
+  pipeline   Manage pipelines
+  work-item  Manage work items (alias: wi)
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --project <PROJECT>
+          Override the default project from config
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

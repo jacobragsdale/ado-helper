@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result, bail};
 
-use crate::client::AdoClient;
+use crate::client::{AdoClient, encode_path_segment};
 
 /// Read a string field from a work item's `fields` JSON value.
 pub fn field_str<'a>(fields: &'a serde_json::Value, key: &str) -> Option<&'a str> {
@@ -16,13 +16,7 @@ pub fn workitem_url(client: &AdoClient, id: u32) -> String {
 
 /// Percent-encode a path segment (work item type, file name).
 pub fn encode_path(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            ' ' => "%20".to_string(),
-            c if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' => c.to_string(),
-            c => format!("%{:02X}", c as u32),
-        })
-        .collect()
+    encode_path_segment(s)
 }
 
 /// Escape single quotes for inclusion in a WIQL string literal.

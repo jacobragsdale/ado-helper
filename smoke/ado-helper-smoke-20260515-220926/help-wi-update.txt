@@ -1,0 +1,63 @@
+Update fields on a work item
+
+Usage: ado work-item update [OPTIONS] <IDS>...
+
+Arguments:
+  <IDS>...
+          Work item ID(s) — pass multiple to apply the same field changes to each
+
+Options:
+      --org <ORG>
+          Override the organization URL from config (e.g. https://dev.azure.com/myorg)
+
+      --title <TITLE>
+          Title (System.Title)
+
+      --project <PROJECT>
+          Override the default project from config
+
+      --state <STATE>
+          State (System.State) — e.g. "To Do", "Doing", "Done", "Active", "Closed"
+
+      --assigned-to <ASSIGNED_TO>
+          Reassign to user (use "me" for yourself, "" to unassign)
+
+      --output <OUTPUT>
+          Output format
+
+          Possible values:
+          - text:  Plain text, one item per line (default)
+          - json:  JSON — full API response, useful for scripting
+          - table: Column-aligned table (only meaningful for list commands; falls back to text elsewhere)
+          
+          [default: text]
+
+      --description <DESCRIPTION>
+          Description (System.Description) — HTML allowed
+
+      --iteration <ITERATION>
+          Iteration path
+
+      --area <AREA>
+          Area path
+
+      --tags <TAGS>
+          Tags — semicolon-separated, e.g. "ux;blocker;p0"
+
+      --priority <PRIORITY>
+          Priority (1–4)
+
+      --severity <SEVERITY>
+          Severity (Bug)
+
+      --story-points <STORY_POINTS>
+          Story Points
+
+      --acceptance-criteria <ACCEPTANCE_CRITERIA>
+          Acceptance Criteria — HTML allowed
+
+      --field <NAME=VALUE>
+          Generic field set, repeatable. Use either short alias or full ADO name. Examples: --field tags=foo --field Microsoft.VSTS.Common.Activity=Development
+
+  -h, --help
+          Print help (see a summary with '-h')

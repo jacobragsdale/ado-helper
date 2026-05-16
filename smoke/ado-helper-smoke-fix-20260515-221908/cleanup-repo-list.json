@@ -1,0 +1,21 @@
+{
+  "value": [
+    {
+      "id": "a818816d-f5f0-4660-b47c-a0fa45a7dae3",
+      "name": "ado-helper",
+      "remoteUrl": "https://jacobragsdale@dev.azure.com/jacobragsdale/development/_git/ado-helper",
+      "defaultBranch": "refs/heads/main",
+      "webUrl": "https://dev.azure.com/jacobragsdale/development/_git/ado-helper",
+      "size": 0
+    },
+    {
+      "id": "07172dbb-fc89-40a3-bcc3-ca071dd1580f",
+      "name": "development",
+      "remoteUrl": "https://jacobragsdale@dev.azure.com/jacobragsdale/development/_git/development",
+      "defaultBranch": "refs/heads/main",
+      "webUrl": "https://dev.azure.com/jacobragsdale/development/_git/development",
+      "size": 190
+    }
+  ],
+  "count": 2
+}
