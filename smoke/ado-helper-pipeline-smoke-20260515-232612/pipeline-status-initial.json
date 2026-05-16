@@ -1,0 +1,15 @@
+{
+  "id": 3,
+  "name": "20260516.1",
+  "state": "inProgress",
+  "result": null,
+  "createdDate": "2026-05-16T04:31:30.9655386Z",
+  "finishedDate": null,
+  "resources": {
+    "repositories": {
+      "self": {
+        "refName": "refs/heads/main"
+      }
+    }
+  }
+}

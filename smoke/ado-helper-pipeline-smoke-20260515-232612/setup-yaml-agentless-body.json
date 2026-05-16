@@ -1,0 +1,25 @@
+{
+  "commits": [
+    {
+      "changes": [
+        {
+          "changeType": "edit",
+          "item": {
+            "path": "/azure-pipelines.ado-helper-smoke.yml"
+          },
+          "newContent": {
+            "content": "trigger: none\npr: none\n\nparameters:\n  - name: environment\n    type: string\n    default: dev\n\npool:\n  server\n\nsteps:\n  - task: Delay@1\n    displayName: \"Wait briefly for ado-helper smoke (${{ parameters.environment }})\"\n    inputs:\n      delayForMinutes: \"1\"\n",
+            "contentType": "rawtext"
+          }
+        }
+      ],
+      "comment": "Use agentless ado-helper smoke pipeline"
+    }
+  ],
+  "refUpdates": [
+    {
+      "name": "refs/heads/main",
+      "oldObjectId": "aae85a3eeaf1a6e017ce184591724e577c49c436"
+    }
+  ]
+}

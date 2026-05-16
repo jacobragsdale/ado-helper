@@ -1,0 +1,36 @@
+trigger:
+  enabled: false
+pr:
+  enabled: false
+parameters:
+- name: environment
+  type: string
+  default: dev
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - task: Bash@3
+      displayName: "Print dummy logs"
+      inputs:
+        targetType: inline
+        script: >
+          echo "ado-helper smoke started"
+
+          echo "branch=$(Build.SourceBranch)"
+
+          echo "smoke=$(smoke)"
+
+          echo "environment=$(environment)"
+
+          echo "parameter_environment=dev"
+
+          for i in 1 2 3 4 5; do
+            echo "log-line-$i"
+            sleep 5
+          done
+
+

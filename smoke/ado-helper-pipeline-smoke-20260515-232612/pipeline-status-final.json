@@ -1,0 +1,15 @@
+{
+  "id": 3,
+  "name": "20260516.1",
+  "state": "completed",
+  "result": "failed",
+  "createdDate": "2026-05-16T04:31:30.9655386Z",
+  "finishedDate": "2026-05-16T04:31:34.7527098Z",
+  "resources": {
+    "repositories": {
+      "self": {
+        "refName": "refs/heads/main"
+      }
+    }
+  }
+}

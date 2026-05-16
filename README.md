@@ -5,10 +5,10 @@
 ## Features
 
 - Configure a default Azure DevOps organization and project.
-- List, create, clone, and delete Git repositories.
+- List, create, clone, delete, and inspect Git repository branches, tags, and commits.
 - Create, inspect, review, comment on, and complete pull requests.
-- List pipelines, start runs, and check or watch run status.
-- Create, update, link, comment on, attach files to, and open work items.
+- List pipelines and runs, start runs, inspect logs, preview YAML, and check or watch run status.
+- Create, query, update, link, comment on, attach files to, and open work items.
 - Print text, table, or JSON output for scripting.
 
 ## Installation
@@ -60,7 +60,7 @@ Configuration precedence is:
 2. Environment variables, including values loaded from `.env`
 3. Saved config from `ado config set`
 
-`ADO_PAT` is only read from the environment or `.env`; it is not written to the saved config file. `ADO_REPO` is optional and is used by PR commands when `--repo` is omitted. If neither is set, PR commands try to infer the repo from the current git `origin` remote.
+`ADO_PAT` is only read from the environment or `.env`; it is not written to the saved config file. `ADO_REPO` is optional and is used by PR and repo inspection commands when `--repo` is omitted. If neither is set, those commands try to infer the repo from the current git `origin` remote.
 
 ## Global Options
 
@@ -86,6 +86,9 @@ Use `ado --help`, `ado help <command>`, or `ado <command> --help` to navigate th
 
 ```sh
 ado repo list --output table
+ado repo branches --repo my-service --output table
+ado repo tags --repo my-service --output table
+ado repo commits --repo my-service --branch main --max 10 --output table
 ado repo create --name my-service
 ado repo clone my-service ./my-service
 ado repo delete old-service --yes
@@ -95,6 +98,8 @@ Aliases:
 
 - `ado repo ls` is the same as `ado repo list`.
 - `ado repo rm` is the same as `ado repo delete`.
+
+When `--repo` is omitted for `repo branches`, `repo tags`, or `repo commits`, `ado` uses `ADO_REPO` or the current git `origin` remote. Branch and tag commands accept `--filter` as a prefix relative to `refs/heads/` or `refs/tags/`. Commit listing accepts `--branch`, `--author`, `--from`, `--to`, and `--max`.
 
 ### Pull Requests
 
@@ -131,11 +136,16 @@ Useful aliases:
 ado pipeline list --output table
 ado pipeline run build-main --branch main
 ado pipeline run 67 --branch feature/login --var environment=dev --var smoke=true
+ado pipeline runs build-main --branch main --max 5 --output table
 ado pipeline status 12345 --pipeline-id 67
 ado pipeline status 12345 --pipeline-id 67 --watch
+ado pipeline logs 12345 --pipeline-id 67
+ado pipeline logs 12345 --pipeline-id 67 2 --follow
+ado pipeline preview build-main --branch main --var smoke=true
+ado pipeline preview 67 --ref refs/heads/main --yaml-file azure-pipelines.yml --output json
 ```
 
-The `pipeline run` command accepts either a numeric pipeline ID or an exact pipeline name. The status command needs both the run ID and pipeline ID.
+Commands that take a pipeline accept either a numeric pipeline ID or an exact pipeline name. The status and logs commands need both the run ID and pipeline ID. `pipeline logs` lists available logs when `LOG_ID` is omitted, and prints plain log content when a log ID is provided. `pipeline preview` prints the rendered `finalYaml` in text mode and the full preview response in JSON mode.
 
 ### Work Items
 
@@ -144,6 +154,8 @@ The `pipeline run` command accepts either a numeric pipeline ID or an exact pipe
 ```sh
 ado wi create --title "Fix login redirect" --type Bug --assigned-to me
 ado wi list --assigned-to me --state Active --output table
+ado wi query --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project ORDER BY [System.ChangedDate] DESC"
+ado wi query --file ./bugs.wiql --output table
 ado wi view 123
 ado wi update 123 --state Closed --field priority=2
 ado wi comment 123 --text "<p>Validated in staging.</p>"
@@ -165,6 +177,8 @@ Useful aliases:
 - `ado wi show` is the same as `ado wi view`.
 - `ado wi rm` is the same as `ado wi delete`.
 - `ado wi browse` is the same as `ado wi open`.
+
+`ado wi query` runs raw WIQL against the configured project. Pass exactly one query source: `--wiql` for inline WIQL or `--file` for a saved query file. Query results are hydrated in batches of up to 200 work item IDs and printed with the same text, table, or JSON shape as `ado wi list`.
 
 ## Field Aliases
 
@@ -237,5 +251,12 @@ cargo run -- pr --help
 cargo run -- pr link-work-item --help
 cargo run -- wi --help
 cargo run -- wi create --help
+cargo run -- wi query --help
 cargo run -- pr complete --help
+cargo run -- pipeline runs --help
+cargo run -- pipeline logs --help
+cargo run -- pipeline preview --help
+cargo run -- repo branches --help
+cargo run -- repo tags --help
+cargo run -- repo commits --help
 ```

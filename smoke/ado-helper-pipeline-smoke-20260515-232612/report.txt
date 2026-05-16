@@ -1,0 +1,32 @@
+Pipeline smoke report: ado-helper-pipeline-smoke-20260515-232612
+
+Local checks passed:
+- cargo fmt --check
+- cargo clippy --all-targets -- -D warnings
+- cargo test
+- cargo run -- pipeline --help
+- cargo run -- pipeline runs --help
+- cargo run -- pipeline logs --help
+- cargo run -- pipeline preview --help
+
+ADO setup:
+- Initial pipeline list returned count 0.
+- Added azure-pipelines.ado-helper-smoke.yml to the ADO repo ado-helper on refs/heads/main.
+- Created/selected Azure pipeline ado-helper-smoke with pipeline ID 2.
+
+Real pipeline validation:
+- pipeline preview text returned final rendered YAML.
+- pipeline preview JSON returned finalYaml.
+- pipeline run queued run 3 with the hosted-agent YAML, but it failed because the project has no hosted parallelism grant.
+- Updated the smoke YAML to use an agentless server job so it can run in this free project.
+- pipeline run queued agentless run 4.
+- pipeline status for run 4 completed with result succeeded.
+- pipeline runs --branch main listed run 4 with branch main and result succeeded.
+- pipeline logs without LOG_ID listed available logs for run 4 in table and JSON modes.
+- pipeline logs with LOG_ID printed signed log content.
+- pipeline logs with LOG_ID --follow streamed log content and exited after run completion.
+
+Notes:
+- The failed hosted-agent run is preserved as evidence of the free-project hosted parallelism limitation:
+  "No hosted parallelism has been purchased or granted."
+- The successful smoke uses an Azure Pipelines server job, which exercises the same run, status, runs, logs, and follow CLI paths without requiring a hosted or self-hosted agent.

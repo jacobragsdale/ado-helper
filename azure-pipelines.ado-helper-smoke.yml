@@ -1,0 +1,16 @@
+trigger: none
+pr: none
+
+parameters:
+  - name: environment
+    type: string
+    default: dev
+
+pool:
+  server
+
+steps:
+  - task: Delay@1
+    displayName: "Wait briefly for ado-helper smoke (${{ parameters.environment }})"
+    inputs:
+      delayForMinutes: "1"

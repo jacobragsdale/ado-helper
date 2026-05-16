@@ -1,0 +1,23 @@
+{
+  "_links": {
+    "self": {
+      "href": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/pipelines/2?revision=1"
+    },
+    "web": {
+      "href": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_build/definition?definitionId=2"
+    }
+  },
+  "configuration": {
+    "path": "/azure-pipelines.ado-helper-smoke.yml",
+    "repository": {
+      "id": "a818816d-f5f0-4660-b47c-a0fa45a7dae3",
+      "type": "azureReposGit"
+    },
+    "type": "yaml"
+  },
+  "folder": "\\",
+  "id": 2,
+  "name": "ado-helper-smoke",
+  "revision": 1,
+  "url": "https://dev.azure.com/jacobragsdale/4cfa0ef7-3881-4801-a2e7-5f933ae6dd2c/_apis/pipelines/2?revision=1"
+}

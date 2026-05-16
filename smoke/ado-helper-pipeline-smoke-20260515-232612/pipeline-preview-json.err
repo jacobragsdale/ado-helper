@@ -1,0 +1,2 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/ado pipeline preview 2 --branch main --yaml-file azure-pipelines.ado-helper-smoke.yml --output json`

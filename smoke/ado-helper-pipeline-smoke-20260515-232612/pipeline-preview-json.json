@@ -1,0 +1,3 @@
+{
+  "finalYaml": "trigger:\n  enabled: false\npr:\n  enabled: false\nparameters:\n- name: environment\n  type: string\n  default: dev\nstages:\n- stage: __default\n  jobs:\n  - job: Job\n    pool:\n      vmImage: ubuntu-latest\n    steps:\n    - task: Bash@3\n      displayName: \"Print dummy logs\"\n      inputs:\n        targetType: inline\n        script: >\n          echo \"ado-helper smoke started\"\n\n          echo \"branch=$(Build.SourceBranch)\"\n\n          echo \"smoke=$(smoke)\"\n\n          echo \"environment=$(environment)\"\n\n          echo \"parameter_environment=dev\"\n\n          for i in 1 2 3 4 5; do\n            echo \"log-line-$i\"\n            sleep 5\n          done\n\n"
+}

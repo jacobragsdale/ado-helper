@@ -47,7 +47,7 @@ enum Commands {
 
     /// Manage Git repositories
     #[command(
-        after_help = "Examples:\n  ado repo list --output table\n  ado repo create --name my-service\n  ado repo clone my-service\n  ado repo delete old-service --yes\n\nRepo deletion is permanent in Azure DevOps."
+        after_help = "Examples:\n  ado repo list --output table\n  ado repo branches --repo my-service\n  ado repo tags --repo my-service\n  ado repo commits --repo my-service --branch main --max 10\n  ado repo create --name my-service\n  ado repo clone my-service\n  ado repo delete old-service --yes\n\nRepo deletion is permanent in Azure DevOps."
     )]
     Repo(repo::RepoArgs),
 
@@ -59,14 +59,14 @@ enum Commands {
 
     /// Manage pipelines
     #[command(
-        after_help = "Examples:\n  ado pipeline list --output table\n  ado pipeline run build-main --branch main --var smoke=true\n  ado pipeline status 12345 --pipeline-id 67 --watch"
+        after_help = "Examples:\n  ado pipeline list --output table\n  ado pipeline run build-main --branch main --var smoke=true\n  ado pipeline runs build-main --max 5\n  ado pipeline logs 12345 --pipeline-id 67 2\n  ado pipeline preview build-main --branch main"
     )]
     Pipeline(pipeline::PipelineArgs),
 
     /// Manage work items (alias: wi)
     #[command(
         visible_alias = "wi",
-        after_help = "Examples:\n  ado wi create --title \"Fix login redirect\" --type Bug --assigned-to me\n  ado wi list --assigned-to me --state Active\n  ado wi update 123 --state Closed --field priority=2\n  ado wi link 123 --child 456\n  ado wi attach 123 ./screenshot.png\n\nUse field aliases like title, state, assigned-to, tags, priority, story-points, and acceptance-criteria with --field."
+        after_help = "Examples:\n  ado wi create --title \"Fix login redirect\" --type Bug --assigned-to me\n  ado wi list --assigned-to me --state Active\n  ado wi query --wiql \"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project\"\n  ado wi update 123 --state Closed --field priority=2\n  ado wi link 123 --child 456\n  ado wi attach 123 ./screenshot.png\n\nUse field aliases like title, state, assigned-to, tags, priority, story-points, and acceptance-criteria with --field."
     )]
     WorkItem(workitem::WorkItemArgs),
 }

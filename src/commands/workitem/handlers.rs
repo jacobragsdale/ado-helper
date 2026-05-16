@@ -10,17 +10,18 @@ const WI_LIST_HEADERS: &[&str] = &["ID", "Type", "State", "Title", "Assignee"];
 
 use super::args::{
     AttachArgs, CommentArgs, CommentDeleteArgs, CommentEditArgs, CommentsArgs, CreateArgs,
-    DeleteArgs, HistoryArgs, LinkArgs, LinkRmArgs, LinksArgs, ListArgs, OpenArgs, UpdateArgs,
-    ViewArgs, WorkItemArgs, WorkItemCommand,
+    DeleteArgs, HistoryArgs, LinkArgs, LinkRmArgs, LinksArgs, ListArgs, OpenArgs, QueryArgs,
+    UpdateArgs, ViewArgs, WorkItemArgs, WorkItemCommand,
 };
 use super::flags::build_field_ops;
 use super::helpers::{encode_path, escape_wiql, field_str, workitem_url};
-use super::types::{AttachmentRef, PatchOp, WiqlResult, WorkItem, WorkItemBatch};
+use super::types::{AttachmentRef, PatchOp, WiqlResult, WiqlWorkItemRef, WorkItem, WorkItemBatch};
 
 pub async fn dispatch(args: WorkItemArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     match args.command {
         WorkItemCommand::Create(a) => create(a, client, output).await,
         WorkItemCommand::List(a) => list(a, client, output).await,
+        WorkItemCommand::Query(a) => query(a, client, output).await,
         WorkItemCommand::View(a) => view(a, client, output).await,
         WorkItemCommand::Update(a) => update(a, client, output).await,
         WorkItemCommand::Delete(a) => delete(a, client).await,
@@ -75,7 +76,34 @@ async fn create(args: CreateArgs, client: &AdoClient, output: &OutputFormat) -> 
 async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     let project = args.project.as_deref().unwrap_or(&client.project);
     let wiql = build_list_wiql(&args);
+    run_wiql_query(client, project, &wiql, output).await
+}
 
+// ── query ───────────────────────────────────────────────────────────────────
+
+async fn query(args: QueryArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let wiql = read_wiql(&args)?;
+    run_wiql_query(client, project, &wiql, output).await
+}
+
+fn read_wiql(args: &QueryArgs) -> Result<String> {
+    if let Some(wiql) = args.wiql.as_deref() {
+        return Ok(wiql.to_string());
+    }
+    let file = args
+        .file
+        .as_ref()
+        .context("expected --wiql or --file for WIQL query")?;
+    std::fs::read_to_string(file).with_context(|| format!("reading WIQL file {}", file.display()))
+}
+
+async fn run_wiql_query(
+    client: &AdoClient,
+    project: &str,
+    wiql: &str,
+    output: &OutputFormat,
+) -> Result<()> {
     let wiql_path = format!(
         "{project}/_apis/wit/wiql?api-version=7.1",
         project = encode_path(project)
@@ -93,9 +121,14 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
         return Ok(());
     }
 
-    let mut items: Vec<WorkItem> = Vec::with_capacity(result.work_items.len());
+    let items = fetch_work_items(client, &result.work_items).await?;
+    print_work_items(&items, output)
+}
+
+async fn fetch_work_items(client: &AdoClient, refs: &[WiqlWorkItemRef]) -> Result<Vec<WorkItem>> {
+    let mut items: Vec<WorkItem> = Vec::with_capacity(refs.len());
     let fields = "System.Id,System.Title,System.State,System.WorkItemType,System.AssignedTo";
-    for chunk in result.work_items.chunks(200) {
+    for chunk in refs.chunks(200) {
         let ids = chunk
             .iter()
             .map(|w| w.id.to_string())
@@ -105,7 +138,10 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
         let batch: WorkItemBatch = client.get_json(&path).await?;
         items.extend(batch.value);
     }
+    Ok(items)
+}
 
+fn print_work_items(items: &[WorkItem], output: &OutputFormat) -> Result<()> {
     match output {
         OutputFormat::Json => output::print_json(&items)?,
         OutputFormat::Text => {

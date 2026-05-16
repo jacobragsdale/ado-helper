@@ -26,7 +26,7 @@ pub struct WorkItemBatch {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WiqlResult {
-    #[serde(rename = "workItems")]
+    #[serde(default, rename = "workItems")]
     pub work_items: Vec<WiqlWorkItemRef>,
 }
 

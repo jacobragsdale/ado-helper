@@ -1,0 +1,20 @@
+trigger:
+  enabled: false
+pr:
+  enabled: false
+parameters:
+- name: environment
+  type: string
+  default: dev
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    pool:
+      name: server
+    steps:
+    - task: Delay@1
+      displayName: Wait briefly for ado-helper smoke (dev)
+      inputs:
+        delayForMinutes: "1"
+

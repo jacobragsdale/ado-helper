@@ -1,0 +1,10 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running `target/debug/ado config show`
+config file: /Users/jacob/Library/Application Support/ado/config.toml
+org:         (not set)
+project:     (not set)
+
+environment overrides (loaded from .env if present):
+  ADO_ORG_URL = https://dev.azure.com/jacobragsdale
+  ADO_PROJECT = development
+  ADO_PAT     = (set, hidden)

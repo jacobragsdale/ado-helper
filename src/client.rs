@@ -91,6 +91,20 @@ impl AdoClient {
             .context("failed to parse JSON response")
     }
 
+    /// GET an absolute URL and return its text body. Used for ADO signed log
+    /// URLs, which are already authorized by their query string.
+    pub async fn get_absolute_text(&self, url: &str) -> Result<String> {
+        let resp = self
+            .http
+            .get(url)
+            .header("Accept", "text/plain")
+            .send()
+            .await
+            .context("GET request failed")?;
+        let resp = Self::check_response(resp).await?;
+        resp.text().await.context("failed to read text response")
+    }
+
     pub async fn post_json<B: serde::Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
