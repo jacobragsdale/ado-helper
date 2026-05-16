@@ -1,78 +1,131 @@
-# TODO
+# Cleanup, Test, And Smoke-Test Plan
 
-Backlog of next steps for the `ado` CLI. Roughly ordered by user-visible impact.
+Goal: make the code easier to change, add focused low-cost tests, then run a real Azure DevOps smoke test against the configured project and validate every command path.
 
-## 1. PR threads & comments
+## 1. Baseline And Guardrails
 
-Round out the PR review flow. Right now `pr approve` works but there's no way to leave inline or top-level feedback from the terminal — every code-review interaction except the vote requires bouncing to the web UI.
+- Keep any current code changes intact. `src/commands/pr.rs` is already modified in the working tree, so inspect it carefully before editing.
+- Run the baseline checks:
+  - `cargo fmt --check`
+  - `cargo clippy --all-targets -- -D warnings`
+  - `cargo test`
+- Capture the command surface from `ado --help` plus each top-level command help so the smoke checklist stays tied to the actual CLI.
+- Do not print or commit secrets. Use the existing `.env` loading path for `ADO_ORG_URL`, `ADO_PROJECT`, `ADO_PAT`, and optionally `ADO_REPO`.
 
-**Scope**
-- `pr comment <id> --text "..."` — post a top-level (general) comment.
-- `pr threads <id>` — list threads with their status (`active`, `closed`, `pending`).
-- `pr thread-reply <id> <thread-id> --text "..."` — reply to an existing thread.
-- `pr thread-resolve <id> <thread-id>` — close a thread.
-- Inline comments on a specific file/line are a stretch goal — the API requires a `threadContext` with `filePath` + `rightFileStart/End` line numbers; usable but more arg-modeling.
+## 2. Cleanup Pass
 
-**Endpoints**
-- `GET/POST /{project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads?api-version=7.1`
-- `PATCH .../threads/{thread-id}` for status changes
-- `POST .../threads/{thread-id}/comments` for replies
+- Split pure parsing/formatting helpers away from network and process code where it is cheap:
+  - PR: repo remote parsing, PR field alias resolution, thread status/location formatting, comment preview truncation.
+  - Pipeline: pipeline selector logic separate from ADO fetching, variable body construction separate from POST.
+  - Work items: WIQL clause construction, relation selection, attachment filename/path encoding.
+  - Repo: clone URL credential injection and repo lookup result formatting.
+- Fix obvious small correctness issues while staying scoped:
+  - Percent-encoding should encode UTF-8 bytes, not Unicode scalar values.
+  - Truncation helpers should avoid slicing strings on non-character byte boundaries.
+  - Project/repo path segments should be consistently encoded anywhere user-provided names enter URLs.
+- Normalize repeated request patterns:
+  - Add a `patch_json` helper to `AdoClient` for PR/comment endpoints that need `application/json`.
+  - Keep `patch_json_patch` only for work item JSON Patch endpoints.
+- Keep command behavior stable. This pass should make the existing commands easier to test, not redesign the CLI.
 
-**Notes**
-- ADO models discussions as a `Thread` containing `comments[]`. A "comment on a PR" is really "create a thread with one comment."
-- Reuse the `repo` resolution chain (`--repo` → `ADO_REPO` → `git remote`) already in `pr.rs`.
+## 3. Simple Tests
 
----
+- Add unit tests for pure helpers first:
+  - `fields::split_field_arg` and `coerce_value` edge cases already exist; add whitespace, negative number, and float/string ambiguity cases if useful.
+  - `repo::inject_pat` with existing password/userinfo, trailing `.git`, and non-ADO HTTPS URL.
+  - `pr::resolve_pr_field`, `strip_refs_heads`, `comment_preview`, `thread_status_label`, `thread_location`, and a pure repo-name-from-remote helper after refactor.
+  - `workitem::helpers::encode_path`, `escape_wiql`, `field_str`, and `workitem_url`.
+  - `workitem::flags::resolve_field_name` for common aliases and unknown alias errors.
+- Add request-body construction tests without hitting ADO:
+  - PR create/update `--field` overrides.
+  - Pipeline run variables and branch ref body.
+  - Work item relation ops for parent, child, related, predecessor, successor, and hyperlink.
+- Add CLI parse smoke tests with `clap::CommandFactory` or `trycmd` only if the unit tests leave gaps. Keep them small.
+- Target: get from 5 tests to roughly 20-30 fast tests before adding heavier integration fixtures.
 
-## 2. `pr files` / diff inspection
+## 4. Real ADO Smoke Test Setup
 
-Make code review without leaving the terminal viable. The current `pr view` shows metadata; `pr files` would show *what changed*.
+- Use one disposable prefix for everything:
+  - `SMOKE_PREFIX=ado-helper-smoke-$(date +%Y%m%d-%H%M%S)`
+  - `SMOKE_REPO=$SMOKE_PREFIX-repo`
+  - `SMOKE_WI_TITLE="$SMOKE_PREFIX work item"`
+  - `SMOKE_BRANCH=$SMOKE_PREFIX-branch`
+- Build once with `cargo build`, then use `target/debug/ado` for every command.
+- Save command output to a local smoke log directory, for example `smoke/$SMOKE_PREFIX/`, with secrets redacted.
+- Record IDs as they are created:
+  - repo name and clone path
+  - work item IDs
+  - comment IDs
+  - PR ID
+  - PR thread ID
+  - pipeline ID and run ID, if a safe pipeline is available
+- Before mutating anything, run read-only checks:
+  - `ado config show`
+  - `ado repo list --output json`
+  - `ado pr list --status all --output json`
+  - `ado pipeline list --output json`
+  - `ado wi list --output json`
 
-**Scope**
-- `pr files <id>` — list changed files with status (add/edit/delete) and per-file line counts.
-- `pr diff <id> [--file path]` — print the diff hunks for one file, or all files. Could shell out to `git diff <merge-base>..<head>` when both refs are local, falling back to the ADO API when not.
+## 5. Smoke Test Matrix
 
-**Endpoints**
-- `GET .../pullRequests/{id}/iterations` → most recent iteration ID
-- `GET .../pullRequests/{id}/iterations/{iter-id}/changes?api-version=7.1` → file list with change types
-- `GET .../diffs/commits?baseVersion=...&targetVersion=...` for the actual diff bodies
+- Config:
+  - Validate `config show` against `.env`.
+  - Validate `config set` using a temporary config directory, not the user's real global config.
+- Repo:
+  - `repo list`
+  - `repo create --name $SMOKE_REPO`
+  - `repo clone $SMOKE_REPO <temp-dir>`
+  - `repo delete $SMOKE_REPO --yes` during cleanup.
+- Work items:
+  - `wi create --type Task --title "$SMOKE_WI_TITLE" --description ...`
+  - `wi list --search "$SMOKE_PREFIX"`
+  - `wi view <id>`
+  - `wi update <id> --state ... --tags "$SMOKE_PREFIX" --field priority=2`
+  - `wi comment <id> --text ...`
+  - `wi comments <id>`
+  - `wi comment-edit <id> <comment-id> --text ...`
+  - `wi comment-delete <id> <comment-id>`
+  - Create a second disposable work item, then validate `wi link`, `wi links`, and `wi link-rm`.
+  - `wi attach <id> <small-temp-file>`
+  - `wi history <id> --limit 10`
+  - `wi open <id>` only after confirming browser-launch side effects are acceptable, or after adding a print/dry-run URL path.
+  - `wi delete <id>` for all disposable work items.
+- PR:
+  - In the cloned smoke repo, push an initial commit to `main`, create `$SMOKE_BRANCH`, push a change, then run `pr create`.
+  - `pr list --repo $SMOKE_REPO --status active`
+  - `pr view <id> --repo $SMOKE_REPO`
+  - `pr update <id> --repo $SMOKE_REPO --title ... --field draft=false`
+  - `pr approve <id> --repo $SMOKE_REPO --vote 10`
+  - `pr comment <id> --repo $SMOKE_REPO --text ...`
+  - `pr threads <id> --repo $SMOKE_REPO`
+  - `pr thread-reply <id> <thread-id> --repo $SMOKE_REPO --text ...`
+  - `pr thread-resolve <id> <thread-id> --repo $SMOKE_REPO`
+  - `pr abandon <id> --repo $SMOKE_REPO`
+  - `pr reactivate <id> --repo $SMOKE_REPO`
+  - `pr complete <id> --repo $SMOKE_REPO --delete-source-branch`
+  - `pr open <id>` only after confirming browser-launch side effects are acceptable, or after adding a print/dry-run URL path.
+- Pipeline:
+  - `pipeline list`
+  - If the project has a known safe pipeline, run it on a safe branch:
+    - `pipeline run <pipeline-id-or-name> --branch <branch> --var ADO_HELPER_SMOKE=$SMOKE_PREFIX`
+    - `pipeline status <run-id> --pipeline-id <pipeline-id>`
+  - Avoid `--watch` unless a short-running safe pipeline is chosen.
 
-**Notes**
-- Showing colorized diffs inline is a UX bonus but adds complexity. Could pipe through `delta`/`bat` if installed and fall back to plain.
-- "Run from anywhere" matters here — most users will be sitting on the source branch when they want to review *another* PR.
+## 6. Validation And Cleanup
 
----
-
-## 3. Quality pass
-
-The codebase has 5 unit tests today, all in `fields.rs` and `workitem/flags.rs`. The `pr`, `pipeline`, and `repo` modules have zero coverage. Pure helpers are easy wins; integration coverage is harder.
-
-**Scope**
-- **Unit tests** for pure functions across modules:
-  - `pr::resolve_pr_field`, `pr::strip_refs_heads`, `pr::repo_from_remote` (parsing-only, no IO)
-  - `repo::inject_pat` (already covered, but could add more edge cases)
-  - `pipeline::resolve_pipeline` name-vs-ID branching (mock the list call)
-- **Integration tests** with recorded HTTP fixtures:
-  - Pick a tool: `wiremock`, `mockito`, or roll a tiny `axum` mock server.
-  - Snapshot real ADO responses (sanitized of PATs/IDs) and replay them in tests.
-  - Lets us verify the end-to-end flow (CLI → request → parse → format) without hitting prod.
-- **Lint pass**: enable `#![deny(warnings)]` in `main.rs` once we're comfortable, plus `clippy` in CI.
-
-**Risks**
-- Integration tests are a real time sink. Worth deferring until we hit a regression that justifies them.
-
----
-
-## 4. Packaging / install story
-
-Today the only way to use `ado` is `cargo build`. That's fine for the author but blocks anyone else from picking it up.
-
-**Scope**
-- **GitHub Releases**: GitHub Actions workflow that cross-compiles for `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-unknown-linux-musl`, `x86_64-pc-windows-msvc` on tag push and uploads binaries. Use `taiki-e/upload-rust-binary-action` or similar.
-- **Homebrew tap**: `homebrew-tap` repo with a formula that downloads the macOS binary from Releases. `brew install jacobragsdale/tap/ado`.
-- **`cargo install ado-cli`**: publish to crates.io. Renames the package (the `ado` name on crates.io is taken). Cheapest distribution channel for Rust users.
-- **README**: install instructions, quickstart, `.env` template walkthrough, the precedence table for `--flag` → env → TOML config.
-
-**Notes**
-- Cross-compiling `rustls-tls` is the easy path (no system OpenSSL). Already configured.
-- Versioning: bump to `0.2.0` for the first public release once `pr` threads or another headline feature lands.
+- For every command, validate both exit status and one concrete output fact:
+  - JSON parses where `--output json` is used.
+  - Created IDs can be viewed.
+  - Updated fields are visible after a follow-up read.
+  - Deleted comments/relations no longer appear.
+  - Completed or abandoned PR status matches the requested transition.
+- Cleanup must run even after partial failure:
+  - Delete disposable work items.
+  - Delete or complete disposable PRs.
+  - Delete the disposable repo.
+  - Remove temp clone and attachment files.
+- End with:
+  - `cargo fmt --check`
+  - `cargo clippy --all-targets -- -D warnings`
+  - `cargo test`
+  - A short smoke report listing commands passed, skipped, failed, and any ADO cleanup leftovers.

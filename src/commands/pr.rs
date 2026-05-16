@@ -31,6 +31,18 @@ pub enum PrCommand {
     /// Approve a pull request (vote = 10, configurable via --vote)
     Approve(ApproveArgs),
 
+    /// Post a top-level comment on a pull request
+    Comment(CommentArgs),
+
+    /// List comment threads on a pull request
+    Threads(ThreadsArgs),
+
+    /// Reply to an existing pull request comment thread
+    ThreadReply(ThreadReplyArgs),
+
+    /// Close an existing pull request comment thread
+    ThreadResolve(ThreadResolveArgs),
+
     /// Complete (merge) a pull request
     Complete(CompleteArgs),
 
@@ -138,6 +150,60 @@ pub struct ApproveArgs {
 }
 
 #[derive(Args)]
+pub struct CommentArgs {
+    /// Pull request ID
+    pub id: u32,
+
+    /// Comment text (Markdown supported by Azure DevOps)
+    #[arg(long)]
+    pub text: String,
+
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
+    #[arg(long)]
+    pub repo: Option<String>,
+}
+
+#[derive(Args)]
+pub struct ThreadsArgs {
+    /// Pull request ID
+    pub id: u32,
+
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
+    #[arg(long)]
+    pub repo: Option<String>,
+}
+
+#[derive(Args)]
+pub struct ThreadReplyArgs {
+    /// Pull request ID
+    pub id: u32,
+
+    /// Thread ID (from `ado pr threads`)
+    pub thread_id: u32,
+
+    /// Reply text (Markdown supported by Azure DevOps)
+    #[arg(long)]
+    pub text: String,
+
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
+    #[arg(long)]
+    pub repo: Option<String>,
+}
+
+#[derive(Args)]
+pub struct ThreadResolveArgs {
+    /// Pull request ID
+    pub id: u32,
+
+    /// Thread ID (from `ado pr threads`)
+    pub thread_id: u32,
+
+    /// Repository name (defaults to ADO_REPO env var or origin remote)
+    #[arg(long)]
+    pub repo: Option<String>,
+}
+
+#[derive(Args)]
 pub struct CompleteArgs {
     /// Pull request ID
     pub id: u32,
@@ -234,6 +300,87 @@ pub struct PrListResponse {
     pub count: u32,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PrThreadListResponse {
+    pub value: Vec<PrThread>,
+    pub count: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PrThread {
+    pub id: u32,
+
+    #[serde(default)]
+    pub status: serde_json::Value,
+
+    #[serde(default)]
+    pub comments: Vec<PrThreadComment>,
+
+    #[serde(default, rename = "threadContext")]
+    pub thread_context: Option<PrThreadContext>,
+
+    #[serde(default, rename = "publishedDate")]
+    pub published_date: Option<String>,
+
+    #[serde(default, rename = "lastUpdatedDate")]
+    pub last_updated_date: Option<String>,
+
+    #[serde(default, rename = "isDeleted")]
+    pub is_deleted: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PrThreadComment {
+    pub id: u32,
+
+    #[serde(default, rename = "parentCommentId")]
+    pub parent_comment_id: Option<u32>,
+
+    #[serde(default)]
+    pub author: Option<IdentityRef>,
+
+    #[serde(default)]
+    pub content: Option<String>,
+
+    #[serde(default, rename = "commentType")]
+    pub comment_type: serde_json::Value,
+
+    #[serde(default, rename = "publishedDate")]
+    pub published_date: Option<String>,
+
+    #[serde(default, rename = "lastUpdatedDate")]
+    pub last_updated_date: Option<String>,
+
+    #[serde(default, rename = "isDeleted")]
+    pub is_deleted: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PrThreadContext {
+    #[serde(default, rename = "filePath")]
+    pub file_path: Option<String>,
+
+    #[serde(default, rename = "leftFileStart")]
+    pub left_file_start: Option<PrCommentPosition>,
+
+    #[serde(default, rename = "leftFileEnd")]
+    pub left_file_end: Option<PrCommentPosition>,
+
+    #[serde(default, rename = "rightFileStart")]
+    pub right_file_start: Option<PrCommentPosition>,
+
+    #[serde(default, rename = "rightFileEnd")]
+    pub right_file_end: Option<PrCommentPosition>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PrCommentPosition {
+    pub line: u32,
+
+    #[serde(default)]
+    pub offset: Option<u32>,
+}
+
 #[derive(Debug, Deserialize)]
 struct IdentitiesResponse {
     value: Vec<IdentityRef>,
@@ -248,6 +395,10 @@ pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Res
         PrCommand::View(a) => view(a, client, output).await,
         PrCommand::Update(a) => update(a, client, output).await,
         PrCommand::Approve(a) => approve(a, client).await,
+        PrCommand::Comment(a) => comment(a, client, output).await,
+        PrCommand::Threads(a) => threads(a, client, output).await,
+        PrCommand::ThreadReply(a) => thread_reply(a, client, output).await,
+        PrCommand::ThreadResolve(a) => thread_resolve(a, client, output).await,
         PrCommand::Complete(a) => complete(a, client, output).await,
         PrCommand::Abandon(a) => abandon(a, client).await,
         PrCommand::Reactivate(a) => reactivate(a, client).await,
@@ -281,15 +432,19 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
                 println!("(no {} PRs in {scope})", status);
                 return Ok(());
             }
-            let lines: Vec<String> = resp.value.iter().map(|p| {
-                let src = strip_refs_heads(&p.source_ref);
-                let tgt = strip_refs_heads(&p.target_ref);
-                let draft = if p.is_draft { " [draft]" } else { "" };
-                format!(
-                    "#{:<5} [{}]{} {}  ({src} -> {tgt})  by {}",
-                    p.id, p.status, draft, p.title, p.created_by.display_name
-                )
-            }).collect();
+            let lines: Vec<String> = resp
+                .value
+                .iter()
+                .map(|p| {
+                    let src = strip_refs_heads(&p.source_ref);
+                    let tgt = strip_refs_heads(&p.target_ref);
+                    let draft = if p.is_draft { " [draft]" } else { "" };
+                    format!(
+                        "#{:<5} [{}]{} {}  ({src} -> {tgt})  by {}",
+                        p.id, p.status, draft, p.title, p.created_by.display_name
+                    )
+                })
+                .collect();
             output::print_text(&lines);
         }
         OutputFormat::Table => {
@@ -298,21 +453,25 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
                 println!("(no {} PRs in {scope})", status);
                 return Ok(());
             }
-            let rows: Vec<Vec<String>> = resp.value.iter().map(|p| {
-                let title = if p.is_draft {
-                    format!("{} [draft]", p.title)
-                } else {
-                    p.title.clone()
-                };
-                vec![
-                    format!("#{}", p.id),
-                    p.status.clone(),
-                    title,
-                    strip_refs_heads(&p.source_ref).to_string(),
-                    strip_refs_heads(&p.target_ref).to_string(),
-                    p.created_by.display_name.clone(),
-                ]
-            }).collect();
+            let rows: Vec<Vec<String>> = resp
+                .value
+                .iter()
+                .map(|p| {
+                    let title = if p.is_draft {
+                        format!("{} [draft]", p.title)
+                    } else {
+                        p.title.clone()
+                    };
+                    vec![
+                        format!("#{}", p.id),
+                        p.status.clone(),
+                        title,
+                        strip_refs_heads(&p.source_ref).to_string(),
+                        strip_refs_heads(&p.target_ref).to_string(),
+                        p.created_by.display_name.clone(),
+                    ]
+                })
+                .collect();
             output::print_table(
                 &["ID", "Status", "Title", "Source", "Target", "Author"],
                 &rows,
@@ -470,6 +629,89 @@ async fn approve(args: ApproveArgs, client: &AdoClient) -> Result<()> {
     Ok(())
 }
 
+// ── comments / threads ─────────────────────────────────────────────────────
+
+async fn comment(args: CommentArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let path = pr_threads_path(client, &repo, args.id);
+    let body = json!({
+        "comments": [
+            {
+                "parentCommentId": 0,
+                "content": args.text,
+                "commentType": 1,
+            }
+        ],
+        "status": 1,
+    });
+    let thread: PrThread = client.post_json(&path, &body).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&thread)?,
+        OutputFormat::Text | OutputFormat::Table => {
+            println!("Added comment on PR #{} (thread #{})", args.id, thread.id);
+        }
+    }
+    Ok(())
+}
+
+async fn threads(args: ThreadsArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let path = pr_threads_path(client, &repo, args.id);
+    let resp: PrThreadListResponse = client.get_json(&path).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&resp)?,
+        OutputFormat::Text => print_threads_text(args.id, &resp.value),
+        OutputFormat::Table => print_threads_table(args.id, &resp.value),
+    }
+    Ok(())
+}
+
+async fn thread_reply(
+    args: ThreadReplyArgs,
+    client: &AdoClient,
+    output: &OutputFormat,
+) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let path = pr_thread_comments_path(client, &repo, args.id, args.thread_id);
+    let body = json!({
+        "content": args.text,
+        "parentCommentId": 1,
+        "commentType": 1,
+    });
+    let comment: PrThreadComment = client.post_json(&path, &body).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&comment)?,
+        OutputFormat::Text | OutputFormat::Table => {
+            println!(
+                "Replied to thread #{} on PR #{} (comment #{})",
+                args.thread_id, args.id, comment.id
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn thread_resolve(
+    args: ThreadResolveArgs,
+    client: &AdoClient,
+    output: &OutputFormat,
+) -> Result<()> {
+    let repo = resolve_repo_required(args.repo.as_deref())?;
+    let path = pr_thread_path(client, &repo, args.id, args.thread_id);
+    let thread: PrThread = patch_json(client, &path, &json!({ "status": 4 })).await?;
+
+    match output {
+        OutputFormat::Json => output::print_json(&thread)?,
+        OutputFormat::Text | OutputFormat::Table => {
+            println!("Closed thread #{} on PR #{}", args.thread_id, args.id);
+        }
+    }
+    Ok(())
+}
+
 // ── complete / abandon / reactivate ─────────────────────────────────────────
 
 async fn complete(args: CompleteArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
@@ -535,8 +777,172 @@ fn web_url(client: &AdoClient, repo: &str, pr_id: u32) -> String {
     )
 }
 
+fn pr_threads_path(client: &AdoClient, repo: &str, pr_id: u32) -> String {
+    format!(
+        "{}/_apis/git/repositories/{}/pullRequests/{}/threads?api-version=7.1",
+        client.project, repo, pr_id
+    )
+}
+
+fn pr_thread_path(client: &AdoClient, repo: &str, pr_id: u32, thread_id: u32) -> String {
+    format!(
+        "{}/_apis/git/repositories/{}/pullRequests/{}/threads/{}?api-version=7.1",
+        client.project, repo, pr_id, thread_id
+    )
+}
+
+fn pr_thread_comments_path(client: &AdoClient, repo: &str, pr_id: u32, thread_id: u32) -> String {
+    format!(
+        "{}/_apis/git/repositories/{}/pullRequests/{}/threads/{}/comments?api-version=7.1",
+        client.project, repo, pr_id, thread_id
+    )
+}
+
 fn strip_refs_heads(s: &str) -> &str {
     s.strip_prefix("refs/heads/").unwrap_or(s)
+}
+
+fn print_threads_text(pr_id: u32, threads: &[PrThread]) {
+    if threads.is_empty() {
+        println!("(no threads on PR #{pr_id})");
+        return;
+    }
+
+    for thread in threads {
+        let status = thread_status_label(&thread.status);
+        let location = thread_location(thread);
+        let comment_count = visible_comment_count(thread);
+        let updated = thread
+            .last_updated_date
+            .as_deref()
+            .or(thread.published_date.as_deref())
+            .unwrap_or("");
+
+        println!(
+            "#{:<5} [{}] {}  {} comment{}  {}",
+            thread.id,
+            status,
+            location,
+            comment_count,
+            if comment_count == 1 { "" } else { "s" },
+            updated
+        );
+
+        if let Some(comment) = first_visible_comment(thread) {
+            let author = comment
+                .author
+                .as_ref()
+                .map(|a| a.display_name.as_str())
+                .unwrap_or("?");
+            let preview = comment_preview(comment.content.as_deref().unwrap_or(""));
+            if !preview.is_empty() {
+                println!("  {author}: {preview}");
+            }
+        }
+    }
+}
+
+fn print_threads_table(pr_id: u32, threads: &[PrThread]) {
+    if threads.is_empty() {
+        println!("(no threads on PR #{pr_id})");
+        return;
+    }
+
+    let rows: Vec<Vec<String>> = threads
+        .iter()
+        .map(|thread| {
+            let comment = first_visible_comment(thread);
+            let author = comment
+                .and_then(|c| c.author.as_ref())
+                .map(|a| a.display_name.as_str())
+                .unwrap_or("?");
+            let preview = comment
+                .and_then(|c| c.content.as_deref())
+                .map(comment_preview)
+                .unwrap_or_default();
+            let updated = thread
+                .last_updated_date
+                .as_deref()
+                .or(thread.published_date.as_deref())
+                .unwrap_or("");
+
+            vec![
+                format!("#{}", thread.id),
+                thread_status_label(&thread.status),
+                thread_location(thread),
+                visible_comment_count(thread).to_string(),
+                author.to_string(),
+                updated.to_string(),
+                preview,
+            ]
+        })
+        .collect();
+
+    output::print_table(
+        &[
+            "Thread", "Status", "Location", "Comments", "Author", "Updated", "Preview",
+        ],
+        &rows,
+    );
+}
+
+fn thread_status_label(status: &serde_json::Value) -> String {
+    if let Some(s) = status.as_str() {
+        return s.to_string();
+    }
+    match status.as_u64() {
+        Some(0) => "unknown",
+        Some(1) => "active",
+        Some(2) => "fixed",
+        Some(3) => "wontFix",
+        Some(4) => "closed",
+        Some(5) => "byDesign",
+        Some(6) => "pending",
+        Some(n) => return n.to_string(),
+        None => "?",
+    }
+    .to_string()
+}
+
+fn thread_location(thread: &PrThread) -> String {
+    let Some(context) = &thread.thread_context else {
+        return "general".to_string();
+    };
+    let Some(path) = context.file_path.as_deref() else {
+        return "general".to_string();
+    };
+
+    if let Some(position) = context
+        .right_file_start
+        .as_ref()
+        .or(context.left_file_start.as_ref())
+    {
+        format!("{path}:{}", position.line)
+    } else {
+        path.to_string()
+    }
+}
+
+fn visible_comment_count(thread: &PrThread) -> usize {
+    thread.comments.iter().filter(|c| !c.is_deleted).count()
+}
+
+fn first_visible_comment(thread: &PrThread) -> Option<&PrThreadComment> {
+    thread.comments.iter().find(|c| !c.is_deleted)
+}
+
+fn comment_preview(content: &str) -> String {
+    const MAX_CHARS: usize = 100;
+
+    let collapsed = content.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut preview = String::new();
+    for c in collapsed.chars().take(MAX_CHARS) {
+        preview.push(c);
+    }
+    if collapsed.chars().count() > MAX_CHARS {
+        preview.push_str("...");
+    }
+    preview
 }
 
 /// PATCH with application/json (PR endpoints take a flat JSON body, not JSON Patch).
@@ -553,7 +959,9 @@ async fn patch_json<B: serde::Serialize, T: serde::de::DeserializeOwned>(
         .await
         .context("PATCH request failed")?;
     let resp = AdoClient::check_response(resp).await?;
-    resp.json::<T>().await.context("failed to parse JSON response")
+    resp.json::<T>()
+        .await
+        .context("failed to parse JSON response")
 }
 
 /// Apply `--field name=value` entries into a JSON object body. Names are
@@ -562,7 +970,9 @@ fn apply_fields(body: &mut serde_json::Value, fields: &[String]) -> Result<()> {
     if fields.is_empty() {
         return Ok(());
     }
-    let map = body.as_object_mut().context("apply_fields: body is not an object")?;
+    let map = body
+        .as_object_mut()
+        .context("apply_fields: body is not an object")?;
     for entry in fields {
         let (name, value) = split_field_arg(entry)?;
         let key = resolve_pr_field(name)?;
@@ -610,9 +1020,14 @@ async fn resolve_identity(client: &AdoClient, name: &str) -> Result<String> {
     );
     let resp: IdentitiesResponse = client.get_json(&path).await?;
     let mut iter = resp.value.into_iter().filter(|i| !i.id.is_empty());
-    let first = iter.next().with_context(|| format!("no identity matched '{name}'"))?;
+    let first = iter
+        .next()
+        .with_context(|| format!("no identity matched '{name}'"))?;
     if iter.next().is_some() {
-        eprintln!("warning: multiple identities matched '{name}', using first: {}", first.display_name);
+        eprintln!(
+            "warning: multiple identities matched '{name}', using first: {}",
+            first.display_name
+        );
     }
     Ok(first.id)
 }
@@ -654,7 +1069,10 @@ fn repo_from_remote() -> Option<String> {
     }
     let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
     let url = url.trim_end_matches(".git");
-    url.rsplit('/').next().map(String::from).filter(|s| !s.is_empty())
+    url.rsplit('/')
+        .next()
+        .map(String::from)
+        .filter(|s| !s.is_empty())
 }
 
 fn resolve_repo_optional(cli: Option<&str>) -> Option<String> {
