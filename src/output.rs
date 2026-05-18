@@ -1,7 +1,7 @@
 use clap::ValueEnum;
 use serde::Serialize;
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Copy, Clone, ValueEnum)]
 pub enum OutputFormat {
     /// Plain text, one item per line (default)
     Text,
@@ -14,6 +14,15 @@ pub enum OutputFormat {
 pub fn print_text(lines: &[String]) {
     for line in lines {
         println!("{line}");
+    }
+}
+
+/// Print a decorative/progress line that should be suppressed under `--quiet`.
+/// Result lines (e.g. "Created #123") should call `println!` directly — this is
+/// only for banners like "(watching — Ctrl-C to stop)" or first-run hints.
+pub fn banner(quiet: bool, msg: &str) {
+    if !quiet {
+        println!("{msg}");
     }
 }
 

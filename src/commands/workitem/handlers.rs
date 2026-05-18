@@ -4,20 +4,27 @@ use anyhow::{Context, Result, bail};
 use serde_json::json;
 
 use crate::client::AdoClient;
+use crate::context::CmdCtx;
 use crate::output::{self, OutputFormat};
 
 const WI_LIST_HEADERS: &[&str] = &["ID", "Type", "State", "Title", "Assignee"];
 
 use super::args::{
     AttachArgs, CommentArgs, CommentDeleteArgs, CommentEditArgs, CommentsArgs, CreateArgs,
-    DeleteArgs, HistoryArgs, LinkArgs, LinkRmArgs, LinksArgs, ListArgs, OpenArgs, QueryArgs,
-    UpdateArgs, ViewArgs, WorkItemArgs, WorkItemCommand,
+    DeleteArgs, FieldsArgs, HistoryArgs, LinkArgs, LinkRmArgs, LinksArgs, ListArgs, OpenArgs,
+    QueryArgs, StatesArgs, TypesArgs, UpdateArgs, ViewArgs, WorkItemArgs, WorkItemCommand,
 };
 use super::flags::build_field_ops;
 use super::helpers::{encode_path, escape_wiql, field_str, workitem_url};
-use super::types::{AttachmentRef, PatchOp, WiqlResult, WiqlWorkItemRef, WorkItem, WorkItemBatch};
+use super::types::{
+    AttachResult, AttachmentRef, FieldListResponse, PatchOp, StateListResponse, WiComment,
+    WiCommentList, WiHistoryResponse, WiqlResult, WiqlWorkItemRef, WorkItem, WorkItemBatch,
+    WorkItemTypeListResponse,
+};
 
-pub async fn dispatch(args: WorkItemArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+pub async fn dispatch(args: WorkItemArgs, ctx: &CmdCtx<'_>) -> Result<()> {
+    let client = ctx.client;
+    let output = &ctx.output;
     match args.command {
         WorkItemCommand::Create(a) => create(a, client, output).await,
         WorkItemCommand::List(a) => list(a, client, output).await,
@@ -34,7 +41,10 @@ pub async fn dispatch(args: WorkItemArgs, client: &AdoClient, output: &OutputFor
         WorkItemCommand::LinkRm(a) => link_rm(a, client, output).await,
         WorkItemCommand::Attach(a) => attach(a, client, output).await,
         WorkItemCommand::History(a) => history(a, client, output).await,
-        WorkItemCommand::Open(a) => open(a, client).await,
+        WorkItemCommand::Open(a) => open(a, client, ctx.quiet).await,
+        WorkItemCommand::Types(a) => types(a, client, output).await,
+        WorkItemCommand::States(a) => states(a, client, output).await,
+        WorkItemCommand::Fields(a) => fields(a, client, output).await,
     }
 }
 
@@ -339,11 +349,13 @@ async fn update(args: UpdateArgs, client: &AdoClient, output: &OutputFormat) -> 
         return Ok(());
     }
 
+    let ids = crate::stdin_ids::read_ids(&args.ids)?;
+
     // Per-ID continue-on-failure: one bad ID shouldn't block the rest. We collect
     // successes/failures and exit non-zero at the end if anything failed.
-    let mut updated: Vec<WorkItem> = Vec::with_capacity(args.ids.len());
+    let mut updated: Vec<WorkItem> = Vec::with_capacity(ids.len());
     let mut failures: Vec<(u32, anyhow::Error)> = Vec::new();
-    for id in &args.ids {
+    for id in &ids {
         let path = format!("_apis/wit/workitems/{id}?api-version=7.1");
         match client.patch_json_patch::<_, WorkItem>(&path, &ops).await {
             Ok(wi) => updated.push(wi),
@@ -351,20 +363,29 @@ async fn update(args: UpdateArgs, client: &AdoClient, output: &OutputFormat) -> 
         }
     }
 
+    // Under --explain, every per-ID error is the dry-run sentinel. Skip the
+    // "Failed #X" noise and propagate Explain so main exits 0.
+    let explain = client.explain_enabled();
+
     match output {
         OutputFormat::Json => output::print_json(&updated)?,
         OutputFormat::Text | OutputFormat::Table => {
             for wi in &updated {
                 println!("Updated #{}", wi.id);
             }
-            for (id, err) in &failures {
-                eprintln!("Failed #{id}: {err}");
+            if !explain {
+                for (id, err) in &failures {
+                    eprintln!("Failed #{id}: {err}");
+                }
             }
         }
     }
 
     if !failures.is_empty() {
-        bail!("{}/{} updates failed", failures.len(), args.ids.len());
+        if explain {
+            return Err(crate::error::CliError::Explain.into());
+        }
+        bail!("{}/{} updates failed", failures.len(), ids.len());
     }
     Ok(())
 }
@@ -398,15 +419,14 @@ async fn comment(args: CommentArgs, client: &AdoClient, output: &OutputFormat) -
         args.id,
         project = encode_path(project)
     );
-    let resp: serde_json::Value = client
+    let resp: WiComment = client
         .post_json(&path, &json!({ "text": args.text }))
         .await?;
 
     match output {
         OutputFormat::Json => output::print_json(&resp)?,
         OutputFormat::Text | OutputFormat::Table => {
-            let cid = resp.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-            println!("Added comment {cid} on #{}", args.id);
+            println!("Added comment {} on #{}", resp.id, args.id);
         }
     }
     Ok(())
@@ -419,31 +439,24 @@ async fn comments(args: CommentsArgs, client: &AdoClient, output: &OutputFormat)
         args.id,
         project = encode_path(project)
     );
-    let resp: serde_json::Value = client.get_json(&path).await?;
+    let resp: WiCommentList = client.get_json(&path).await?;
 
     match output {
         OutputFormat::Json => output::print_json(&resp)?,
         OutputFormat::Text | OutputFormat::Table => {
-            let empty: Vec<serde_json::Value> = Vec::new();
-            let list = resp
-                .get("comments")
-                .and_then(|v| v.as_array())
-                .unwrap_or(&empty);
-            if list.is_empty() {
+            if resp.comments.is_empty() {
                 println!("(no comments on #{})", args.id);
                 return Ok(());
             }
-            for c in list {
-                let cid = c.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            for c in &resp.comments {
                 let author = c
-                    .get("createdBy")
-                    .and_then(|v| v.get("displayName"))
-                    .and_then(|v| v.as_str())
+                    .created_by
+                    .as_ref()
+                    .map(|i| i.display_name.as_str())
                     .unwrap_or("?");
-                let date = c.get("createdDate").and_then(|v| v.as_str()).unwrap_or("");
-                let text = c.get("text").and_then(|v| v.as_str()).unwrap_or("");
-                println!("─ #{cid}  {author}  {date}");
-                println!("  {text}");
+                let date = c.created_date.as_deref().unwrap_or("");
+                println!("─ #{}  {author}  {date}", c.id);
+                println!("  {}", c.text);
             }
         }
     }
@@ -462,12 +475,12 @@ async fn comment_edit(
         args.comment_id,
         project = encode_path(project)
     );
-    let v: serde_json::Value = client
+    let resp: WiComment = client
         .patch_json(&path, &json!({ "text": args.text }))
         .await?;
 
     match output {
-        OutputFormat::Json => output::print_json(&v)?,
+        OutputFormat::Json => output::print_json(&resp)?,
         OutputFormat::Text | OutputFormat::Table => {
             println!("Edited comment {} on #{}", args.comment_id, args.id)
         }
@@ -603,17 +616,31 @@ async fn link_rm(args: LinkRmArgs, client: &AdoClient, output: &OutputFormat) ->
 // ── attachments ─────────────────────────────────────────────────────────────
 
 async fn attach(args: AttachArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
-    let bytes = std::fs::read(&args.file).with_context(|| format!("reading {}", args.file))?;
-    let filename = std::path::Path::new(&args.file)
+    let filename_owned = std::path::Path::new(&args.file)
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("attachment");
+        .unwrap_or("attachment")
+        .to_string();
+    let filename = filename_owned.as_str();
 
-    // 1. Upload the file body to get an attachment URL.
     let upload_path = format!(
         "_apis/wit/attachments?fileName={}&api-version=7.1",
         encode_path(filename)
     );
+
+    // Raw octet-stream POST bypasses the JSON helpers' explain hook, so guard
+    // it explicitly. Done before reading the file to keep --explain side-effect-free.
+    if let Some(e) = client.explain_skip(
+        "POST (octet-stream)",
+        &upload_path,
+        Some(&format!("[binary upload of {}]", args.file)),
+    ) {
+        return Err(e);
+    }
+
+    let bytes = std::fs::read(&args.file).with_context(|| format!("reading {}", args.file))?;
+
+    // 1. Upload the file body to get an attachment URL.
     let resp = client
         .post(&upload_path)
         .header("Content-Type", "application/octet-stream")
@@ -639,13 +666,17 @@ async fn attach(args: AttachArgs, client: &AdoClient, output: &OutputFormat) -> 
     }];
     let path = format!("_apis/wit/workitems/{}?api-version=7.1", args.id);
     let wi: WorkItem = client.patch_json_patch(&path, &ops).await?;
+    let result = AttachResult {
+        attachment,
+        work_item: wi,
+    };
     match output {
-        OutputFormat::Json => output::print_json(&json!({
-            "attachment": attachment,
-            "workItem": wi,
-        }))?,
+        OutputFormat::Json => output::print_json(&result)?,
         OutputFormat::Text | OutputFormat::Table => {
-            println!("Attached {filename} to #{} (id {})", args.id, attachment.id);
+            println!(
+                "Attached {filename} to #{} (id {})",
+                args.id, result.attachment.id
+            );
         }
     }
     Ok(())
@@ -658,30 +689,24 @@ async fn history(args: HistoryArgs, client: &AdoClient, output: &OutputFormat) -
         "_apis/wit/workItems/{}/updates?$top={}&api-version=7.1",
         args.id, args.limit
     );
-    let resp: serde_json::Value = client.get_json(&path).await?;
+    let resp: WiHistoryResponse = client.get_json(&path).await?;
 
     match output {
         OutputFormat::Json => output::print_json(&resp)?,
         OutputFormat::Text | OutputFormat::Table => {
-            let empty: Vec<serde_json::Value> = Vec::new();
-            let updates = resp
-                .get("value")
-                .and_then(|v| v.as_array())
-                .unwrap_or(&empty);
-            if updates.is_empty() {
+            if resp.value.is_empty() {
                 println!("(no history)");
                 return Ok(());
             }
-            for u in updates {
-                let rev = u.get("rev").and_then(|v| v.as_u64()).unwrap_or(0);
+            for u in &resp.value {
                 let by = u
-                    .get("revisedBy")
-                    .and_then(|v| v.get("displayName"))
-                    .and_then(|v| v.as_str())
+                    .revised_by
+                    .as_ref()
+                    .map(|i| i.display_name.as_str())
                     .unwrap_or("?");
-                let date = u.get("revisedDate").and_then(|v| v.as_str()).unwrap_or("");
-                println!("rev {rev}  {by}  {date}");
-                if let Some(fields) = u.get("fields").and_then(|v| v.as_object()) {
+                let date = u.revised_date.as_deref().unwrap_or("");
+                println!("rev {}  {by}  {date}", u.rev);
+                if let Some(fields) = u.fields.as_object() {
                     for (name, change) in fields {
                         let old = change.get("oldValue").map(short_val).unwrap_or_default();
                         let new = change.get("newValue").map(short_val).unwrap_or_default();
@@ -711,9 +736,178 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
     out
 }
 
+// ── metadata: types / states / fields ───────────────────────────────────────
+
+async fn types(args: TypesArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let path = format!(
+        "{project}/_apis/wit/workitemtypes?api-version=7.1",
+        project = encode_path(project)
+    );
+    let mut resp: WorkItemTypeListResponse = client.get_json(&path).await?;
+    resp.value.sort_by(|a, b| a.name.cmp(&b.name));
+
+    match output {
+        OutputFormat::Json => output::print_json(&resp)?,
+        OutputFormat::Text => {
+            if resp.value.is_empty() {
+                println!("(no work item types in {project})");
+                return Ok(());
+            }
+            let width = resp.value.iter().map(|t| t.name.len()).max().unwrap_or(0);
+            for t in &resp.value {
+                let dis = if t.is_disabled { " (disabled)" } else { "" };
+                if t.description.is_empty() {
+                    println!("{:<width$}{dis}", t.name, width = width);
+                } else {
+                    println!("{:<width$}  {}{dis}", t.name, t.description, width = width);
+                }
+            }
+        }
+        OutputFormat::Table => {
+            if resp.value.is_empty() {
+                println!("(no work item types in {project})");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = resp
+                .value
+                .iter()
+                .map(|t| {
+                    vec![
+                        t.name.clone(),
+                        t.reference_name.clone(),
+                        if t.is_disabled {
+                            "yes".into()
+                        } else {
+                            "".into()
+                        },
+                        t.description.clone(),
+                    ]
+                })
+                .collect();
+            output::print_table(
+                &["Name", "Reference Name", "Disabled", "Description"],
+                &rows,
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn states(args: StatesArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let path = format!(
+        "{project}/_apis/wit/workitemtypes/{type}/states?api-version=7.1",
+        project = encode_path(project),
+        r#type = encode_path(&args.r#type)
+    );
+    let mut resp: StateListResponse = client.get_json(&path).await?;
+    resp.value.sort_by(|a, b| a.order.cmp(&b.order));
+
+    match output {
+        OutputFormat::Json => output::print_json(&resp)?,
+        OutputFormat::Text => {
+            if resp.value.is_empty() {
+                println!("(no states for {})", args.r#type);
+                return Ok(());
+            }
+            for s in &resp.value {
+                if s.category.is_empty() {
+                    println!("{}", s.name);
+                } else {
+                    println!("{:<20}  [{}]", s.name, s.category);
+                }
+            }
+        }
+        OutputFormat::Table => {
+            if resp.value.is_empty() {
+                println!("(no states for {})", args.r#type);
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = resp
+                .value
+                .iter()
+                .map(|s| vec![s.name.clone(), s.category.clone(), s.color.clone()])
+                .collect();
+            output::print_table(&["Name", "Category", "Color"], &rows);
+        }
+    }
+    Ok(())
+}
+
+async fn fields(args: FieldsArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let path = match args.r#type.as_deref() {
+        Some(t) => format!(
+            "{project}/_apis/wit/workitemtypes/{type}/fields?api-version=7.1",
+            project = encode_path(project),
+            r#type = encode_path(t)
+        ),
+        None => format!(
+            "{project}/_apis/wit/fields?api-version=7.1",
+            project = encode_path(project)
+        ),
+    };
+    let mut resp: FieldListResponse = client.get_json(&path).await?;
+    resp.value.sort_by(|a, b| a.name.cmp(&b.name));
+
+    match output {
+        OutputFormat::Json => output::print_json(&resp)?,
+        OutputFormat::Text => {
+            if resp.value.is_empty() {
+                println!("(no fields)");
+                return Ok(());
+            }
+            let name_w = resp.value.iter().map(|f| f.name.len()).max().unwrap_or(0);
+            let ref_w = resp
+                .value
+                .iter()
+                .map(|f| f.reference_name.len())
+                .max()
+                .unwrap_or(0);
+            // Per-type endpoint omits `type`; print two columns there.
+            let any_type = resp.value.iter().any(|f| !f.field_type.is_empty());
+            for f in &resp.value {
+                if any_type {
+                    println!(
+                        "{:<name_w$}  {:<ref_w$}  {}",
+                        f.name,
+                        f.reference_name,
+                        f.field_type,
+                        name_w = name_w,
+                        ref_w = ref_w
+                    );
+                } else {
+                    println!("{:<name_w$}  {}", f.name, f.reference_name, name_w = name_w);
+                }
+            }
+        }
+        OutputFormat::Table => {
+            if resp.value.is_empty() {
+                println!("(no fields)");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = resp
+                .value
+                .iter()
+                .map(|f| {
+                    vec![
+                        f.name.clone(),
+                        f.reference_name.clone(),
+                        f.field_type.clone(),
+                        if f.read_only { "yes".into() } else { "".into() },
+                    ]
+                })
+                .collect();
+            output::print_table(&["Name", "Reference Name", "Type", "Read-Only"], &rows);
+        }
+    }
+    Ok(())
+}
+
 // ── open ────────────────────────────────────────────────────────────────────
 
-async fn open(args: OpenArgs, client: &AdoClient) -> Result<()> {
+async fn open(args: OpenArgs, client: &AdoClient, quiet: bool) -> Result<()> {
     let project = args.project.as_deref().unwrap_or(&client.project);
     let url = format!(
         "{}/{}/_workitems/edit/{}",
@@ -721,6 +915,9 @@ async fn open(args: OpenArgs, client: &AdoClient) -> Result<()> {
         encode_path(project),
         args.id
     );
-    println!("Opening work item #{} in browser...", args.id);
+    output::banner(
+        quiet,
+        &format!("Opening work item #{} in browser...", args.id),
+    );
     AdoClient::open_in_browser(&url)
 }

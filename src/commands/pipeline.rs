@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::io::{self, Write};
@@ -7,6 +8,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::client::{AdoClient, encode_path_segment};
+use crate::context::CmdCtx;
 use crate::fields::{coerce_value, split_field_arg};
 use crate::output::{self, OutputFormat};
 
@@ -187,7 +189,7 @@ pub struct PreviewArgs {
 
 // ── ADO API response shapes ──────────────────────────────────────────────────
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Pipeline {
     pub id: u32,
     pub name: String,
@@ -199,13 +201,13 @@ pub struct Pipeline {
     pub revision: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PipelineListResponse {
     pub value: Vec<Pipeline>,
     pub count: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PipelineRun {
     pub id: u32,
     pub name: String,
@@ -223,31 +225,31 @@ pub struct PipelineRun {
     pub resources: Option<RunResources>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PipelineRunListResponse {
     pub value: Vec<PipelineRun>,
     pub count: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RunResources {
     #[serde(default)]
     pub repositories: Option<RunRepositories>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RunRepositories {
     #[serde(default, rename = "self")]
     pub self_repo: Option<RunRepository>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RunRepository {
     #[serde(default, rename = "refName")]
     pub ref_name: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PipelineLogListResponse {
     #[serde(default)]
     pub logs: Vec<PipelineLog>,
@@ -259,7 +261,7 @@ pub struct PipelineLogListResponse {
     pub count: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PipelineLog {
     pub id: u32,
 
@@ -279,7 +281,7 @@ pub struct PipelineLog {
     pub signed_content: Option<SignedContent>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SignedContent {
     pub url: String,
 
@@ -287,7 +289,7 @@ pub struct SignedContent {
     pub signature_expires: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PreviewRun {
     #[serde(default, rename = "finalYaml")]
     pub final_yaml: Option<String>,
@@ -295,14 +297,14 @@ pub struct PreviewRun {
 
 // ── Command dispatch ────────────────────────────────────────────────────────
 
-pub async fn run(args: PipelineArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+pub async fn run(args: PipelineArgs, ctx: &CmdCtx<'_>) -> Result<()> {
     match args.command {
-        PipelineCommand::List(a) => list(a, client, output).await,
-        PipelineCommand::Run(a) => run_pipeline(a, client, output).await,
-        PipelineCommand::Runs(a) => runs(a, client, output).await,
-        PipelineCommand::Status(a) => status(a, client, output).await,
-        PipelineCommand::Logs(a) => logs(a, client, output).await,
-        PipelineCommand::Preview(a) => preview(a, client, output).await,
+        PipelineCommand::List(a) => list(a, ctx.client, &ctx.output).await,
+        PipelineCommand::Run(a) => run_pipeline(a, ctx.client, &ctx.output).await,
+        PipelineCommand::Runs(a) => runs(a, ctx.client, &ctx.output).await,
+        PipelineCommand::Status(a) => status(a, ctx.client, &ctx.output).await,
+        PipelineCommand::Logs(a) => logs(a, ctx.client, &ctx.output).await,
+        PipelineCommand::Preview(a) => preview(a, ctx.client, &ctx.output).await,
     }
 }
 

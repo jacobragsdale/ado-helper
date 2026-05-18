@@ -9,15 +9,15 @@ mod args;
 mod flags;
 mod handlers;
 mod helpers;
-mod types;
+pub mod types;
 
 pub use args::WorkItemArgs;
+pub use types::WorkItem;
 
 use anyhow::Result;
 
-use crate::client::AdoClient;
-use crate::output::OutputFormat;
+use crate::context::CmdCtx;
 
-pub async fn run(args: WorkItemArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
-    handlers::dispatch(args, client, output).await
+pub async fn run(args: WorkItemArgs, ctx: &CmdCtx<'_>) -> Result<()> {
+    handlers::dispatch(args, ctx).await
 }

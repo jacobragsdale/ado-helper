@@ -1,8 +1,10 @@
 //! Small wi-specific helpers used across `flags` and `handlers`.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 
 use crate::client::{AdoClient, encode_path_segment};
+use crate::commands::me;
+use crate::config::Config;
 
 /// Read a string field from a work item's `fields` JSON value.
 pub fn field_str<'a>(fields: &'a serde_json::Value, key: &str) -> Option<&'a str> {
@@ -24,22 +26,36 @@ pub fn escape_wiql(s: &str) -> String {
     s.replace('\'', "''")
 }
 
-/// Resolve a "me" placeholder via `_apis/connectionData`. Other inputs pass
-/// through unchanged.
+/// Resolve a "me" placeholder. Prefers the on-disk cache written by
+/// `ado me`; falls back to a live `_apis/connectionData` fetch (and warms
+/// the cache while it's there). Other inputs pass through unchanged.
 pub async fn resolve_user(client: &AdoClient, who: &str) -> Result<String> {
     if !who.eq_ignore_ascii_case("me") {
         return Ok(who.to_string());
     }
-    let v: serde_json::Value = client
-        .get_json("_apis/connectionData?api-version=7.1-preview.1")
+    if let Ok(cfg) = Config::load() {
+        if let Some(id) = cfg.identity {
+            if let Some(s) = preferred_handle(&id) {
+                return Ok(s);
+            }
+        }
+    }
+    let me = me::fetch_identity(client)
         .await
         .context("could not fetch connectionData to resolve 'me'")?;
-    let user = &v["authenticatedUser"];
-    if let Some(email) = user["properties"]["Account"]["$value"].as_str() {
-        return Ok(email.to_string());
+    if let Ok(mut cfg) = Config::load() {
+        cfg.identity = Some(me.clone());
+        let _ = cfg.save();
     }
-    if let Some(name) = user["providerDisplayName"].as_str() {
-        return Ok(name.to_string());
+    preferred_handle(&me).context("could not resolve current user from connectionData")
+}
+
+fn preferred_handle(id: &me::MeInfo) -> Option<String> {
+    if !id.unique_name.is_empty() {
+        return Some(id.unique_name.clone());
     }
-    bail!("could not resolve current user from connectionData")
+    if !id.display_name.is_empty() {
+        return Some(id.display_name.clone());
+    }
+    None
 }

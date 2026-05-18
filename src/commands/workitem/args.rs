@@ -94,6 +94,24 @@ pub enum WorkItemCommand {
         after_help = "Examples:\n  ado wi open 123\n  ado wi browse 123"
     )]
     Open(OpenArgs),
+
+    /// List work item types defined in the project
+    #[command(
+        after_help = "Examples:\n  ado wi types\n  ado wi types --output table\n  ado wi types --output json\n\nUse the `name` column with `--type` on create/update."
+    )]
+    Types(TypesArgs),
+
+    /// List valid states for a work item type
+    #[command(
+        after_help = "Examples:\n  ado wi states Bug\n  ado wi states \"User Story\" --output json\n\nUse the `name` column with `--state` on update."
+    )]
+    States(StatesArgs),
+
+    /// List field definitions (all, or scoped to a work item type)
+    #[command(
+        after_help = "Examples:\n  ado wi fields\n  ado wi fields --type Bug\n  ado wi fields --type \"User Story\" --output table\n\nThe `reference_name` column is the canonical identifier used in WIQL and JSON Patch."
+    )]
+    Fields(FieldsArgs),
 }
 
 #[derive(Args)]
@@ -166,8 +184,9 @@ pub struct ViewArgs {
 
 #[derive(Args)]
 pub struct UpdateArgs {
-    /// Work item ID(s) — pass multiple to apply the same field changes to each
-    #[arg(required = true, num_args = 1..)]
+    /// Work item ID(s) — pass multiple to apply the same field changes to each,
+    /// or omit and pipe ids on stdin (one per line, or a JSON array)
+    #[arg(num_args = 0..)]
     pub ids: Vec<u32>,
 
     #[command(flatten)]
@@ -329,6 +348,35 @@ pub struct OpenArgs {
     /// Work item ID
     #[arg(value_name = "ID")]
     pub id: u32,
+
+    /// Project (defaults to configured project)
+    #[arg(long, value_name = "PROJECT")]
+    pub project: Option<String>,
+}
+
+#[derive(Args)]
+pub struct TypesArgs {
+    /// Project (defaults to configured project)
+    #[arg(long, value_name = "PROJECT")]
+    pub project: Option<String>,
+}
+
+#[derive(Args)]
+pub struct StatesArgs {
+    /// Work item type (e.g. `Bug`, `Task`, `User Story`)
+    #[arg(value_name = "TYPE")]
+    pub r#type: String,
+
+    /// Project (defaults to configured project)
+    #[arg(long, value_name = "PROJECT")]
+    pub project: Option<String>,
+}
+
+#[derive(Args)]
+pub struct FieldsArgs {
+    /// Limit to fields defined on this work item type (default: all fields)
+    #[arg(long, value_name = "TYPE")]
+    pub r#type: Option<String>,
 
     /// Project (defaults to configured project)
     #[arg(long, value_name = "PROJECT")]
