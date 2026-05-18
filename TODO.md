@@ -41,40 +41,40 @@ Primitives every higher-level command depends on. Build these first so the rest 
 
 The top-priority area. Goal: an agent can drive a full sprint planning session — pull capacity, see the backlog, assign work, set the goal, roll over carryover — without touching the web UI.
 
-- [ ] Add `ado sprint backlog`
+- [x] Add `ado sprint backlog`
   - List candidate work items for an iteration: `--iteration @next` by default.
   - Filter by `--type`, `--state`, `--tag`, `--area`, `--unassigned`, `--top N`.
   - Show id, type, title, state, assigned-to, story points/effort, tags.
 
-- [ ] Add `ado sprint board`
+- [x] Add `ado sprint board`
   - Render the team board for an iteration: columns × work items.
   - Text mode: column headers with item counts; table mode: items grouped by column; json: full structure.
   - Use Work Boards API.
 
-- [ ] Add `ado sprint plan-into`
+- [x] Add `ado sprint plan-into`
   - `ado sprint plan-into <wi-id...> --iteration @next` sets `System.IterationPath` on one or more items in a single call.
   - Accept ids via args or stdin (so an agent can pipe results from `ado wi query`).
   - Support `--assigned-to` and `--state` to set in the same operation (one round-trip per item).
 
-- [ ] Add `ado sprint capacity`
+- [x] Add `ado sprint capacity`
   - `ado sprint capacity --iteration @current` shows per-member capacity, days off, activity buckets.
   - `ado sprint capacity set --member <id> --hours-per-day 6 --activity Development` writes capacity for the configured team.
   - Use Work/TeamSettings/Iterations/Capacities API.
 
 - [ ] Add `ado sprint goal`
-  - Get/set sprint goal text. ADO stores this on the team-iteration; expose `ado sprint goal --iteration @current` and `ado sprint goal set --iteration @next --text "..."`.
+  - **Blocked on stock ADO API:** no verified first-party Azure DevOps Work/WIT REST endpoint was found for sprint goal text. Keep this unchecked unless a stock endpoint is confirmed, or intentionally choose a different storage model such as a goal work item or extension API.
 
-- [ ] Add `ado sprint burndown`
+- [x] Add `ado sprint burndown`
   - Pull remaining-work totals across the iteration's items, grouped by day from start to today.
   - Text: ASCII sparkline + numbers; json: array of `{date, remaining_hours, completed_hours, scope_hours}`.
   - Optional `--by member` to break out per-engineer.
 
-- [ ] Add `ado sprint rollover`
+- [x] Add `ado sprint rollover`
   - Move unfinished items from `@current` (or any iteration) to `@next`.
   - `--dry-run` lists what would move; `--state-filter "Active,New"` controls which items; `--reset-remaining` optional.
   - Post a comment on each moved item linking to the rollover summary.
 
-- [ ] Add `ado sprint summary`
+- [x] Add `ado sprint summary`
   - End-of-sprint snapshot: planned vs. completed points/hours, carryover count, additions mid-sprint (items whose iteration was changed during the sprint), per-member breakdown.
   - Pair with `ado sprint burndown` to feed retro prep.
 
@@ -160,4 +160,3 @@ Quality-of-life that makes the CLI safer to drive from an LLM.
 
 - [x] Schema docs command
   - `ado schema <command>` prints the JSON output schema for that command. Lets agents introspect without scraping the README.
-

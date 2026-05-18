@@ -10,6 +10,7 @@
 - Create, inspect, review, comment on, and complete pull requests.
 - List pipelines and runs, start runs, inspect logs, preview YAML, and check or watch run status.
 - Create, query, update, link, comment on, attach files to, and open work items.
+- Plan sprint work: backlog, taskboard, plan-into, capacity, burndown, rollover, and summaries.
 - Discover work item types, states, and field reference names without scraping the web UI.
 - Print text, table, or JSON output for scripting, with stable typed schemas (`ado schema`).
 - Agent-friendly chassis: predictable exit codes, `--explain` dry-runs, `--quiet`, and stdin batching for mutations.
@@ -64,7 +65,7 @@ Configuration precedence is:
 2. Environment variables, including values loaded from `.env`
 3. Saved config from `ado config set`
 
-`ADO_PAT` is only read from the environment or `.env`; it is not written to the saved config file. `ADO_REPO` is optional and is used by PR and repo inspection commands when `--repo` is omitted. If neither is set, those commands try to infer the repo from the current git `origin` remote. `ADO_TEAM` is used by team-scoped commands (`iteration`, future capacity/board/sprint); set it once with `ado team set <name>` and `ado config show` will report the resolved value.
+`ADO_PAT` is only read from the environment or `.env`; it is not written to the saved config file. `ADO_REPO` is optional and is used by PR and repo inspection commands when `--repo` is omitted. If neither is set, those commands try to infer the repo from the current git `origin` remote. `ADO_TEAM` is used by team-scoped commands (`iteration` and `sprint`); set it once with `ado team set <name>` and `ado config show` will report the resolved value.
 
 ## Global Options
 
@@ -123,6 +124,7 @@ Mutation commands accept ids on stdin so an agent can chain `ado wi query --outp
 ```sh
 ado wi list --assigned-to me | ado wi update --tags "rolled-over"
 ado wi query --wiql "..." --output json | jq '[.[].id]' | ado wi update --state Closed
+ado wi query --wiql "..." --output json | jq '[.[].id]' | ado sprint plan-into --iteration @next
 echo '[123, 124]' | ado pr link-work-item 42 --repo my-service
 ```
 
@@ -131,7 +133,7 @@ Accepted input forms when ids are read from stdin:
 - One id per line (blanks ignored; a leading `#` is tolerated so `ado wi list` text output drops in directly).
 - A JSON array of integers (e.g. `[1, 2, 3]`).
 
-If no ids are provided as arguments and stdin is a TTY, the command exits `3` (validation) with a clear message rather than blocking on stdin. Today this works for `ado wi update` and `ado pr link-work-item`.
+If no ids are provided as arguments and stdin is a TTY, the command exits `3` (validation) with a clear message rather than blocking on stdin. Today this works for `ado wi update`, `ado sprint plan-into`, and `ado pr link-work-item`.
 
 ## Command Guide
 
@@ -162,6 +164,29 @@ ado area list                # flat backslash-separated paths, paste-ready into 
 `ado me` writes the caller's identity to the config file. Commands that resolve "me" (`wi list --assigned-to me`, future `my queue`) read the cached identity instead of round-tripping `_apis/connectionData` on every call. Use `ado me refresh` after switching orgs.
 
 Iteration shortcuts: `@current`, `@next`, `@previous` (and the aliases `@now`, `@prev`) work anywhere an iteration reference is accepted. They resolve against the team selected by `--team` / `ADO_TEAM` / saved config.
+
+### Sprint Planning
+
+```sh
+ado sprint backlog --iteration @next --output table
+ado sprint backlog --type Bug --state Active --tag blocked --top 20
+ado sprint board --iteration @current --output table
+ado sprint plan-into 123 124 --iteration @next --assigned-to me --state Active
+ado wi query --wiql "..." --output json | jq '[.[].id]' | ado sprint plan-into --iteration @next
+
+ado sprint capacity --iteration @current --output table
+ado sprint capacity set --member me --hours-per-day 6 --activity Development
+
+ado sprint burndown --iteration @current
+ado sprint burndown --by member --output json
+ado sprint rollover --from @current --to @next --dry-run
+ado sprint rollover --state-filter "Active,New" --reset-remaining
+ado sprint summary --iteration @current --output json
+```
+
+`sprint backlog`, `board`, `capacity`, `burndown`, and `summary` are read-only. `sprint plan-into`, `capacity set`, and `rollover` mutate ADO and honor the global `--explain` flag where their write calls are reached. `sprint rollover --dry-run` previews the exact set of unfinished items without writing.
+
+`sprint goal` is intentionally not implemented yet. The stock Azure DevOps Work/WIT REST APIs do not expose a verified first-party sprint-goal text endpoint; keep using the web UI or provide a deliberate storage model before adding a CLI command.
 
 ### Schemas & Metadata Discovery
 
@@ -359,6 +384,14 @@ cargo run -- team --help
 cargo run -- iteration --help
 cargo run -- area --help
 cargo run -- schema --help
+cargo run -- sprint --help
+cargo run -- sprint backlog --help
+cargo run -- sprint board --help
+cargo run -- sprint plan-into --help
+cargo run -- sprint capacity --help
+cargo run -- sprint burndown --help
+cargo run -- sprint rollover --help
+cargo run -- sprint summary --help
 cargo run -- pr --help
 cargo run -- pr link-work-item --help
 cargo run -- pr checks --help
@@ -380,12 +413,14 @@ cargo run -- repo tags --help
 cargo run -- repo commits --help
 ```
 
-Live end-to-end smoke (requires `.env` with a valid PAT/org/project; `ADO_TEAM` or a saved team is needed for iteration commands):
+Live end-to-end smoke (requires `.env` with a valid PAT/org/project; `ADO_TEAM` or a saved team is needed for iteration and sprint commands):
 
 ```sh
 cargo run -- me
 cargo run -- team list --output table
 cargo run -- iteration current
+cargo run -- sprint backlog --iteration @current --output table
+cargo run -- sprint capacity --output table
 cargo run -- area tree --depth 3
 cargo run -- wi types --output table
 cargo run -- schema --list

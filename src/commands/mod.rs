@@ -5,5 +5,6 @@ pub mod pipeline;
 pub mod pr;
 pub mod repo;
 pub mod schema;
+pub mod sprint;
 pub mod team;
 pub mod workitem;

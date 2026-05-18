@@ -473,6 +473,14 @@ run_cmd "help-team" "$ADO_BIN" team --help
 run_cmd "help-iteration" "$ADO_BIN" iteration --help
 run_cmd "help-area" "$ADO_BIN" area --help
 run_cmd "help-schema" "$ADO_BIN" schema --help
+run_cmd "help-sprint" "$ADO_BIN" sprint --help
+run_cmd "help-sprint-backlog" "$ADO_BIN" sprint backlog --help
+run_cmd "help-sprint-board" "$ADO_BIN" sprint board --help
+run_cmd "help-sprint-plan-into" "$ADO_BIN" sprint plan-into --help
+run_cmd "help-sprint-capacity" "$ADO_BIN" sprint capacity --help
+run_cmd "help-sprint-burndown" "$ADO_BIN" sprint burndown --help
+run_cmd "help-sprint-rollover" "$ADO_BIN" sprint rollover --help
+run_cmd "help-sprint-summary" "$ADO_BIN" sprint summary --help
 run_cmd "help-repo" "$ADO_BIN" repo --help
 run_cmd "help-pr" "$ADO_BIN" pr --help
 run_cmd "help-pipeline" "$ADO_BIN" pipeline --help
@@ -522,6 +530,12 @@ if [[ -n "${ADO_TEAM:-}" ]]; then
   run_allow_codes "iteration-next-json" "0 2" "$ROOT" "$ADO_BIN" iteration next --output json
   run_allow_codes "iteration-view-current-json" "0 2" "$ROOT" "$ADO_BIN" iteration view @current --output json
   run_allow_codes "iteration-view-previous-json" "0 2" "$ROOT" "$ADO_BIN" iteration view @previous --output json
+  run_allow_codes "sprint-backlog-current-json" "0 2" "$ROOT" "$ADO_BIN" sprint backlog --iteration @current --output json
+  run_allow_codes "sprint-board-current-json" "0 2" "$ROOT" "$ADO_BIN" sprint board --iteration @current --output json
+  run_allow_codes "sprint-capacity-json" "0 2" "$ROOT" "$ADO_BIN" sprint capacity --output json
+  run_allow_codes "sprint-burndown-json" "0 2" "$ROOT" "$ADO_BIN" sprint burndown --output json
+  run_allow_codes "sprint-summary-json" "0 2" "$ROOT" "$ADO_BIN" sprint summary --output json
+  run_allow_codes "sprint-rollover-dry-run-json" "0 2" "$ROOT" "$ADO_BIN" sprint rollover --dry-run --output json
 else
   skip "team-set/current/members/iteration" "no team exists in project"
 fi
@@ -682,6 +696,9 @@ if [[ -n "$WI_ID_1" && -n "$WI_ID_2" ]]; then
   run_with_stdin "wi-update-stdin-json" "$TMP_DIR/wi-ids.json" "$ADO_BIN" wi update --tags "$RUN_ID;stdin" --output json
   assert_jq "wi-update-stdin-updated-two" "$(artifact_out wi-update-stdin-json)" 'length == 2'
   run_cmd "wi-update-explain" "$ADO_BIN" --explain wi update "$WI_ID_1" --field priority=2
+  if [[ -n "${ADO_TEAM:-}" ]]; then
+    run_allow_codes "sprint-plan-into-explain" "0 2" "$ROOT" "$ADO_BIN" --explain sprint plan-into "$WI_ID_1" --iteration @current --assigned-to me
+  fi
   run_cmd "wi-comment-json" "$ADO_BIN" wi comment "$WI_ID_1" --text "<p>$RUN_ID comment</p>" --output json
   WI_COMMENT_ID="$(jq -r '.id // empty' "$(artifact_out wi-comment-json)")"
   assert_jq_arg "wi-comment-id" "$(artifact_out wi-comment-json)" wi "$WI_ID_1" '(.workItemId | tostring) == $wi'

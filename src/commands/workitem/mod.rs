@@ -5,10 +5,11 @@
 //! - `helpers`  — small wi-specific utilities (`me` resolution, encoding)
 //! - `handlers` — actual command bodies
 
+pub(crate) mod api;
 mod args;
-mod flags;
+pub(crate) mod flags;
 mod handlers;
-mod helpers;
+pub(crate) mod helpers;
 pub mod types;
 
 pub use args::WorkItemArgs;

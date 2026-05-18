@@ -15,7 +15,7 @@ use clap::Args;
 use schemars::schema::RootSchema;
 use schemars::schema_for;
 
-use crate::commands::{area, iteration, me, pipeline, pr, repo, team, workitem};
+use crate::commands::{area, iteration, me, pipeline, pr, repo, sprint, team, workitem};
 use crate::error::CliError;
 use crate::output::{self, OutputFormat};
 
@@ -90,6 +90,29 @@ fn registry() -> Vec<(&'static str, SchemaFn)> {
             schema_for!(pipeline::PipelineLogListResponse)
         }),
         ("pipeline preview", || schema_for!(pipeline::PreviewRun)),
+        // Sprint planning
+        ("sprint backlog", || {
+            schema_for!(sprint::SprintBacklogResponse)
+        }),
+        ("sprint board", || schema_for!(sprint::SprintBoardResponse)),
+        ("sprint plan-into", || {
+            schema_for!(sprint::SprintPlanIntoResponse)
+        }),
+        ("sprint capacity", || {
+            schema_for!(sprint::SprintCapacityResponse)
+        }),
+        ("sprint capacity set", || {
+            schema_for!(sprint::SprintCapacitySetResponse)
+        }),
+        ("sprint burndown", || {
+            schema_for!(sprint::SprintBurndownResponse)
+        }),
+        ("sprint rollover", || {
+            schema_for!(sprint::SprintRolloverResponse)
+        }),
+        ("sprint summary", || {
+            schema_for!(sprint::SprintSummaryResponse)
+        }),
         // Work items
         ("wi list", || schema_for!(Vec<workitem::types::WorkItem>)),
         ("wi query", || schema_for!(Vec<workitem::types::WorkItem>)),
@@ -193,6 +216,8 @@ mod tests {
             "pr view",
             "pipeline list",
             "repo list",
+            "sprint backlog",
+            "sprint summary",
         ] {
             assert!(paths.contains(&expected), "registry missing `{expected}`");
         }
