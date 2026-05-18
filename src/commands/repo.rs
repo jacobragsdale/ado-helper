@@ -1,10 +1,12 @@
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::process::Command;
 
 use crate::client::{AdoClient, encode_path_segment};
+use crate::context::CmdCtx;
 use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
@@ -172,7 +174,7 @@ pub struct CommitsArgs {
 
 // ── ADO API response shapes ──────────────────────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Repository {
     pub id: String,
     pub name: String,
@@ -190,19 +192,19 @@ pub struct Repository {
     pub size: Option<u64>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RepoListResponse {
     pub value: Vec<Repository>,
     pub count: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GitRefListResponse {
     pub value: Vec<GitRef>,
     pub count: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GitRef {
     pub name: String,
 
@@ -213,13 +215,13 @@ pub struct GitRef {
     pub peeled_object_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GitCommitListResponse {
     pub value: Vec<GitCommit>,
     pub count: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GitCommit {
     #[serde(rename = "commitId")]
     pub commit_id: String,
@@ -237,7 +239,7 @@ pub struct GitCommit {
     pub remote_url: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GitUserDate {
     #[serde(default)]
     pub name: String,
@@ -251,15 +253,15 @@ pub struct GitUserDate {
 
 // ── Command dispatch ────────────────────────────────────────────────────────
 
-pub async fn run(args: RepoArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+pub async fn run(args: RepoArgs, ctx: &CmdCtx<'_>) -> Result<()> {
     match args.command {
-        RepoCommand::Create(a) => create(a, client, output).await,
-        RepoCommand::List(a) => list(a, client, output).await,
-        RepoCommand::Clone(a) => clone(a, client).await,
-        RepoCommand::Delete(a) => delete(a, client).await,
-        RepoCommand::Branches(a) => branches(a, client, output).await,
-        RepoCommand::Tags(a) => tags(a, client, output).await,
-        RepoCommand::Commits(a) => commits(a, client, output).await,
+        RepoCommand::Create(a) => create(a, ctx.client, &ctx.output).await,
+        RepoCommand::List(a) => list(a, ctx.client, &ctx.output).await,
+        RepoCommand::Clone(a) => clone(a, ctx.client).await,
+        RepoCommand::Delete(a) => delete(a, ctx.client).await,
+        RepoCommand::Branches(a) => branches(a, ctx.client, &ctx.output).await,
+        RepoCommand::Tags(a) => tags(a, ctx.client, &ctx.output).await,
+        RepoCommand::Commits(a) => commits(a, ctx.client, &ctx.output).await,
     }
 }
 

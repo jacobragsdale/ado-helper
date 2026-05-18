@@ -32,3 +32,6 @@ toml = "0.8"
 
 # Loads a .env file at startup so per-repo project/org/PAT can be swapped without editing global config
 dotenvy = "0.15"
+
+# Derives JSON Schema documents from the typed output structs so `ado schema <cmd>` can publish a stable contract
+schemars = "0.8"

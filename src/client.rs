@@ -1,6 +1,9 @@
 use anyhow::{Context, Result, bail};
-use reqwest::{Client, RequestBuilder, Response};
+use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde::de::DeserializeOwned;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::error::CliError;
 
 /// Shared HTTP client pre-configured with auth and base URL for the ADO REST API.
 pub struct AdoClient {
@@ -11,6 +14,10 @@ pub struct AdoClient {
     pub project: String,
     /// PAT token — stored only in memory, never written to disk
     pat: String,
+    /// When true, mutating helpers print the would-be call and bail with
+    /// `CliError::Explain` instead of touching ADO. Set by `main` from the
+    /// global `--explain` flag.
+    explain: AtomicBool,
 }
 
 impl AdoClient {
@@ -28,7 +35,46 @@ impl AdoClient {
             org,
             project,
             pat,
+            explain: AtomicBool::new(false),
         })
+    }
+
+    pub fn set_explain(&self, explain: bool) {
+        self.explain.store(explain, Ordering::Relaxed);
+    }
+
+    pub fn explain_enabled(&self) -> bool {
+        self.explain.load(Ordering::Relaxed)
+    }
+
+    /// Print a would-be REST call and bail with `CliError::Explain` so the
+    /// runtime treats the dry-run as success.
+    fn dry_run<T>(&self, method: &str, path: &str, body: Option<&str>) -> Result<T> {
+        eprintln!("DRY-RUN: {method} {url}", url = self.url(path));
+        if let Some(b) = body {
+            eprintln!("{b}");
+        }
+        Err(CliError::Explain.into())
+    }
+
+    /// Mutation guard for handlers that build a `RequestBuilder` by hand (e.g.
+    /// raw-body POSTs). Returns `Some(err)` under `--explain` (after printing
+    /// the would-be call) or `None` when the caller should proceed with the
+    /// real request.
+    pub fn explain_skip(
+        &self,
+        method: &str,
+        path: &str,
+        body_note: Option<&str>,
+    ) -> Option<anyhow::Error> {
+        if !self.explain_enabled() {
+            return None;
+        }
+        eprintln!("DRY-RUN: {method} {url}", url = self.url(path));
+        if let Some(b) = body_note {
+            eprintln!("{b}");
+        }
+        Some(CliError::Explain.into())
     }
 
     fn url(&self, path: &str) -> String {
@@ -80,7 +126,13 @@ impl AdoClient {
             .ok()
             .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(String::from))
             .unwrap_or(body);
-        bail!("ADO error {status}: {message}")
+        let formatted = format!("ADO error {status}: {message}");
+        let err = match status {
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => CliError::Auth(formatted),
+            StatusCode::NOT_FOUND => CliError::NotFound(formatted),
+            _ => CliError::Api(formatted),
+        };
+        Err(err.into())
     }
 
     pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
@@ -110,6 +162,9 @@ impl AdoClient {
         path: &str,
         body: &B,
     ) -> Result<T> {
+        if self.explain_enabled() {
+            return self.dry_run("POST", path, serialize_for_explain(body).as_deref());
+        }
         let resp = self
             .post(path)
             .header("Content-Type", "application/json")
@@ -129,6 +184,9 @@ impl AdoClient {
         path: &str,
         body: &B,
     ) -> Result<T> {
+        if self.explain_enabled() {
+            return self.dry_run("PATCH", path, serialize_for_explain(body).as_deref());
+        }
         let resp = self
             .patch(path)
             .header("Content-Type", "application/json")
@@ -142,12 +200,41 @@ impl AdoClient {
             .context("failed to parse JSON response")
     }
 
+    /// PUT with a JSON body.
+    pub async fn put_json<B: serde::Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        if self.explain_enabled() {
+            return self.dry_run("PUT", path, serialize_for_explain(body).as_deref());
+        }
+        let resp = self
+            .put(path)
+            .header("Content-Type", "application/json")
+            .json(body)
+            .send()
+            .await
+            .context("PUT request failed")?;
+        let resp = Self::check_response(resp).await?;
+        resp.json::<T>()
+            .await
+            .context("failed to parse JSON response")
+    }
+
     /// PATCH with a JSON Patch body — required content-type for work item updates.
     pub async fn patch_json_patch<B: serde::Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
     ) -> Result<T> {
+        if self.explain_enabled() {
+            return self.dry_run(
+                "PATCH (json-patch)",
+                path,
+                serialize_for_explain(body).as_deref(),
+            );
+        }
         let resp = self
             .patch(path)
             .header("Content-Type", "application/json-patch+json")
@@ -163,6 +250,9 @@ impl AdoClient {
 
     /// DELETE that doesn't expect a JSON body in response.
     pub async fn delete_no_body(&self, path: &str) -> Result<()> {
+        if self.explain_enabled() {
+            return self.dry_run("DELETE", path, None);
+        }
         let resp = self
             .delete(path)
             .send()
@@ -193,6 +283,10 @@ impl AdoClient {
             .with_context(|| format!("failed to spawn {program}"))?;
         Ok(())
     }
+}
+
+fn serialize_for_explain<B: serde::Serialize>(body: &B) -> Option<String> {
+    serde_json::to_string_pretty(body).ok()
 }
 
 /// Percent-encode a single URL path or query component using UTF-8 bytes.

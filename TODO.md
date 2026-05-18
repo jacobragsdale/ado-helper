@@ -1,63 +1,163 @@
 Note: Mark checklist items as completed (`[x]`) when the feature is implemented, documented, and covered by appropriate tests or smoke checks.
 
-# Feature Ideas
+# Vision
 
-- [x] Add `ado pipeline logs`
-  - Fetch logs for a pipeline run using the Azure DevOps Pipelines Logs REST API.
-  - Support arguments for pipeline ID, run ID, and optional log ID. If no log ID is provided, list available logs for the run.
-  - Consider `--follow` for polling active runs and streaming new log output until completion.
-  - Preserve `--output json` for scriptable log metadata and use plain text for log content.
+`ado` is the one-shot CLI an LLM agent uses to drive my Azure DevOps work as an engineering manager. Every feature is a discrete subcommand with stable flags, clean `--output json`, and predictable exit codes so an agent can chain them into higher-level workflows (sprint planning, standup digests, release notes). Default scope is "just me, current iteration"; flags widen to team or arbitrary iteration. No external integrations — ADO REST APIs only.
 
-- [x] Add `ado pipeline runs`
-  - List recent runs for a pipeline using the Pipelines Runs REST API.
-  - Accept a pipeline name or ID, matching the existing `ado pipeline run` behavior.
-  - Include useful filters such as branch, state, result, and max count if the API supports them cleanly.
-  - Table/text output should show run ID, run name, branch, state, result, created date, and finished date.
+# Foundation
 
-- [x] Add `ado pipeline preview`
-  - Use the Pipelines Preview REST API to render the final YAML for a pipeline without starting a run.
-  - Accept pipeline name or ID, branch/ref, variables, and an optional YAML override file.
-  - Print final YAML in text mode and the full preview response in JSON mode.
-  - This should help debug templates, parameters, and variable expansion before queuing a real run.
+Primitives every higher-level command depends on. Build these first so the rest can compose them.
 
-- [x] Add `ado wi query`
-  - Run raw WIQL against the configured project using the Work Item Tracking WIQL REST API.
-  - Support inline queries with `--wiql` and file-based queries with `--file`.
-  - Fetch returned work item IDs in batches of up to 200, matching the current `wi list` pattern.
-  - Reuse existing work item table/text/json output where possible.
+- [x] Add `ado me`
+  - Resolve the caller's identity via the Profile/Identity API (descriptor, display name, unique name, id).
+  - Used as the default `--assigned-to` and as the implicit subject of "my" commands.
+  - Cache to config so other commands can read it without an extra round-trip.
 
-- [ ] Add work item metadata discovery commands
-  - Add commands such as `ado wi types`, `ado wi fields`, `ado wi areas`, and `ado wi iterations`.
-  - Use Work Item Tracking metadata APIs for work item types, fields, and classification nodes.
-  - Make output easy to copy into existing flags like `--type`, `--field`, `--area`, and `--iteration`.
-  - Include project override support where relevant.
+- [x] Add `ado team` commands
+  - `ado team list`, `ado team current`, `ado team members`, `ado team set <name>`.
+  - Use Core Teams API; persist `--team` default via `ado config set --team`.
+  - Required by every iteration, capacity, and board command below.
 
-- [ ] Add `ado pr checks` or `ado pr policy`
-  - Show pull request statuses, policy results, and branch policy requirements for a PR.
-  - Use Pull Request Statuses and Policy Configurations REST APIs where possible.
-  - Include status state, context/name, description, creator, updated date, and target URL.
-  - This should answer why a PR can or cannot be completed without opening the browser.
+- [x] Add `ado iteration` commands
+  - `ado iteration list`, `ado iteration current`, `ado iteration next`, `ado iteration view <id|@current|@next>`.
+  - Use Work/TeamSettings/Iterations API.
+  - Show id, name, path, start/finish date, time-frame (past/current/future).
+  - Accept `@current` / `@next` / `@previous` shorthands everywhere an iteration is taken.
 
-- [ ] Add `ado pr checkout`
-  - Fetch and checkout a pull request source branch locally.
-  - Resolve the PR through the existing PR view logic, then use Git commands to fetch the source ref.
-  - Support a default local branch name and an override such as `--branch`.
-  - Keep behavior clear when the target branch already exists locally.
+- [x] Add `ado area` commands
+  - `ado area list`, `ado area tree` (use Classification Nodes API with depth).
+  - Output should be paste-ready into `--area` / `--field area=...`.
 
-- [x] Add repository branch, tag, and commit commands
-  - Add commands such as `ado repo branches`, `ado repo tags`, and `ado repo commits`.
-  - Use Git Refs and Commits REST APIs from Azure DevOps 7.1.
-  - Support repo name inference from `ADO_REPO` or the current git remote where consistent with PR commands.
-  - Table output should show names, object IDs, authors, dates, and comments where applicable.
+- [x] Add `ado wi` metadata discovery
+  - `ado wi types`, `ado wi states <type>`, `ado wi fields [--type ...]`.
+  - Use Work Item Tracking metadata APIs; output paste-ready values for `--type`, `--state`, `--field`.
 
-- [ ] Add board/sprint helper commands
-  - Add commands such as `ado board current`, `ado sprint`, or `ado backlog`.
-  - Use Work APIs for team iterations, boards, and backlogs.
-  - Support team selection with `--team`, defaulting to the project team when possible.
-  - Focus on high-value summaries: current iteration, assigned work, backlog items, and item states.
+- [x] Standardize agent-friendly output across all commands
+  - Guarantee `--output json` returns a stable, documented schema for every command (not just the raw API response).
+  - Add `--quiet` (no banners/colors) and consistent exit codes: `0` success, `2` not-found, `3` validation, `4` auth, `5` API error.
+  - Document the schema contract in `README.md` so agents can rely on it.
 
-- [ ] Add organization/project/team discovery commands
-  - Add commands such as `ado project list`, `ado team list`, `ado team members`, and `ado me`.
-  - Use Core Teams/Projects APIs and identity APIs where appropriate.
-  - Help users discover valid project/team names and resolve people for reviewers or work item assignment.
-  - Consider whether discovered defaults should integrate with `ado config set`.
+# Sprint & Iteration Planning (priority)
+
+The top-priority area. Goal: an agent can drive a full sprint planning session — pull capacity, see the backlog, assign work, set the goal, roll over carryover — without touching the web UI.
+
+- [ ] Add `ado sprint backlog`
+  - List candidate work items for an iteration: `--iteration @next` by default.
+  - Filter by `--type`, `--state`, `--tag`, `--area`, `--unassigned`, `--top N`.
+  - Show id, type, title, state, assigned-to, story points/effort, tags.
+
+- [ ] Add `ado sprint board`
+  - Render the team board for an iteration: columns × work items.
+  - Text mode: column headers with item counts; table mode: items grouped by column; json: full structure.
+  - Use Work Boards API.
+
+- [ ] Add `ado sprint plan-into`
+  - `ado sprint plan-into <wi-id...> --iteration @next` sets `System.IterationPath` on one or more items in a single call.
+  - Accept ids via args or stdin (so an agent can pipe results from `ado wi query`).
+  - Support `--assigned-to` and `--state` to set in the same operation (one round-trip per item).
+
+- [ ] Add `ado sprint capacity`
+  - `ado sprint capacity --iteration @current` shows per-member capacity, days off, activity buckets.
+  - `ado sprint capacity set --member <id> --hours-per-day 6 --activity Development` writes capacity for the configured team.
+  - Use Work/TeamSettings/Iterations/Capacities API.
+
+- [ ] Add `ado sprint goal`
+  - Get/set sprint goal text. ADO stores this on the team-iteration; expose `ado sprint goal --iteration @current` and `ado sprint goal set --iteration @next --text "..."`.
+
+- [ ] Add `ado sprint burndown`
+  - Pull remaining-work totals across the iteration's items, grouped by day from start to today.
+  - Text: ASCII sparkline + numbers; json: array of `{date, remaining_hours, completed_hours, scope_hours}`.
+  - Optional `--by member` to break out per-engineer.
+
+- [ ] Add `ado sprint rollover`
+  - Move unfinished items from `@current` (or any iteration) to `@next`.
+  - `--dry-run` lists what would move; `--state-filter "Active,New"` controls which items; `--reset-remaining` optional.
+  - Post a comment on each moved item linking to the rollover summary.
+
+- [ ] Add `ado sprint summary`
+  - End-of-sprint snapshot: planned vs. completed points/hours, carryover count, additions mid-sprint (items whose iteration was changed during the sprint), per-member breakdown.
+  - Pair with `ado sprint burndown` to feed retro prep.
+
+# My Work & Time Tracking
+
+Default scope is me. These should be the lowest-friction commands in the tool.
+
+- [ ] Add `ado my queue`
+  - One-shot "what's on my plate now": active items assigned to me in `@current`, sorted by state (Doing → To Do), then priority/stack-rank.
+  - Flags: `--iteration`, `--state`, `--include-blocked`.
+
+- [ ] Add `ado my prs`
+  - PRs I authored (active) + PRs awaiting my review. Show id, repo, title, status, vote summary, age.
+  - One-shot version of "should I review something today?".
+
+- [ ] Add `ado my time log`
+  - **Blocked on info:** time tracking is handled by a custom ADO plugin, not the stock `CompletedWork`/`RemainingWork` fields. Need details from the user before designing this: plugin name/vendor, REST endpoints (or extension API surface), auth model (same PAT scopes?), the data shape it stores (custom fields on the WI? separate entity?), and whether it exposes read + write or write-only.
+  - Tentative shape: `ado my time log <wi-id> --hours 1.5 [--note "..."]` writes a time entry via the plugin's API.
+  - `--date YYYY-MM-DD` to backfill; defaults to today.
+
+- [ ] Add `ado my time today` / `ado my time week`
+  - **Blocked on the same plugin info above** — read-side queries depend on what the plugin exposes (per-user entries, date filters, aggregation).
+  - Tentative shape: roll up entries authored by me across a date range, grouped by work item; show hours per item and total.
+
+- [ ] Add `ado my focus`
+  - "What should I pick up next" helper: highest stack-rank Doing item in `@current` assigned to me; falls back to To Do. Returns one work item id in text mode for easy chaining.
+
+# Team Progress & Standup
+
+Same scope flag (`--team` or default team) on everything; "just me" is a `--mine` opt-in for the team commands.
+
+- [ ] Add `ado team status`
+  - One row per member: active item, blocked count, PRs open, PRs awaiting their review.
+  - Pulls from `wi list` + PR list filtered by author/reviewer.
+
+- [ ] Add `ado team standup`
+  - Per-member digest of changes since a cutoff (`--since 24h` default): state transitions, comments added, PRs opened/merged, items closed.
+  - Reads work item revisions + PR list; output is a markdown digest by default (paste-ready into chat manually — no external posting).
+
+- [ ] Add `ado team blocked`
+  - Items tagged `blocked` or in a Blocked state, or items with no activity for N days, across the team's `@current` iteration.
+
+- [ ] Add `ado team aging`
+  - Active items grouped by age in current state. Highlights items that have been Doing for > N days.
+  - `--threshold 3d` to tune; output sorted descending by age.
+
+- [ ] Add `ado team throughput`
+  - Closed items per member over the last N sprints (or a date range). Counts and points if available.
+  - Useful for forecasting and retro inputs.
+
+- [ ] Add `ado team review-queue`
+  - Active PRs across the team's repos, with each PR's age, vote rollup, and reviewer list.
+  - `--awaiting <member>` filters to PRs blocked on a specific person.
+
+# Release Notes & Reporting
+
+Generate markdown from ADO state. No external posting — write to stdout or `--out file.md`.
+
+- [ ] Add `ado notes iteration`
+  - `ado notes iteration @current --out release-notes.md` generates a markdown release-notes draft from completed work items in the iteration.
+  - Group by work item type (Feature → User Story → Bug); include id, title, and a link to the work item.
+  - `--include-prs` cross-references merged PRs linked to those items.
+
+- [ ] Add `ado notes range`
+  - Same idea but bounded by `--from <date> --to <date>` or `--query <wiql>` for ad-hoc reports.
+  - Used for cross-sprint releases or hotfix batches.
+
+- [ ] Add `ado notes prs`
+  - Markdown summary of merged PRs in a date range across one or more repos.
+  - Useful when work items don't tell the whole story (infra, refactors).
+
+# Polish for Agent Use
+
+Quality-of-life that makes the CLI safer to drive from an LLM.
+
+- [x] Stdin batching for mutation commands
+  - `ado wi update`, `ado sprint plan-into`, `ado pr link-work-item` should accept ids on stdin (one per line or JSON array) so agents can pipe `ado wi query` output in.
+  - Done for `wi update` and `pr link-work-item`; `sprint plan-into` will reuse the same `stdin_ids::read_ids` helper when that command lands.
+
+- [x] `--explain` flag on mutation commands
+  - Prints the exact REST call(s) that would be made and exits non-zero without performing the mutation. Lets an agent (or me) dry-run anything destructive.
+  - Implemented as a global flag; `--explain` dry-runs exit `0` (success) so agents can verify the planned call without branching on a failure code.
+
+- [x] Schema docs command
+  - `ado schema <command>` prints the JSON output schema for that command. Lets agents introspect without scraping the README.
+

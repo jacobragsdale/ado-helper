@@ -1,4 +1,9 @@
+pub mod area;
+pub mod iteration;
+pub mod me;
 pub mod pipeline;
 pub mod pr;
 pub mod repo;
+pub mod schema;
+pub mod team;
 pub mod workitem;

@@ -2,17 +2,21 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
 use crate::client::{AdoClient, encode_path_segment};
+use crate::commands::repo;
+use crate::commands::workitem::WorkItem;
+use crate::context::CmdCtx;
 use crate::fields::{coerce_value, split_field_arg};
 use crate::output::{self, OutputFormat};
+use schemars::JsonSchema;
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  ado pr create --repo my-service --title \"Add health check\" --target main\n  ado pr list --repo my-service --status active --output table\n  ado pr view 42 --repo my-service\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr checks 42 --repo my-service\n  ado pr threads 42 --repo my-service\n  ado pr checkout 42\n  ado pr complete 42 --repo my-service --merge-strategy squash --delete-source-branch\n\nWhen --repo is omitted, ado uses ADO_REPO or the current git origin remote."
+    after_help = "Examples:\n  ado pr create --repo my-service --title \"Add health check\" --target main\n  ado pr list --repo my-service --status active --output table\n  ado pr view 42 --repo my-service\n  ado pr link-work-item 42 --repo my-service --work-item 123\n  ado pr checks 42 --repo my-service\n  ado pr threads 42 --repo my-service\n  ado pr checkout 42\n  ado pr complete 42 --repo my-service --merge-strategy squash --delete-source-branch\n\n`ado pr list` searches the whole project when --repo is omitted. Repo-specific PR commands use ADO_REPO or the current git origin remote when --repo is omitted."
 )]
 pub struct PrArgs {
     #[command(subcommand)]
@@ -30,7 +34,7 @@ pub enum PrCommand {
     /// List pull requests
     #[command(
         visible_alias = "ls",
-        after_help = "Examples:\n  ado pr list --repo my-service\n  ado pr ls --repo my-service --status all --output table\n  ado pr list --status completed"
+        after_help = "Examples:\n  ado pr list\n  ado pr list --repo my-service\n  ado pr ls --repo my-service --status all --output table\n  ado pr list --status completed\n\nWhen --repo is omitted, list searches pull requests across every repo in the project."
     )]
     List(ListArgs),
 
@@ -96,9 +100,15 @@ pub enum PrCommand {
 
     /// Check out a pull request's source branch locally
     #[command(
-        after_help = "Examples:\n  ado pr checkout 42\n  ado pr checkout 42 --branch review/alice-login\n\nRequires a clean working tree. Must be run inside a clone of the PR's repo. Same-repo PRs only — forked PRs are not supported."
+        after_help = "Examples:\n  ado pr checkout 42\n  ado pr checkout 42 --branch review/alice-login\n  ado pr checkout 42 --detach\n  ado pr checkout 42 --dir ~/.ado/reviews/my-service-pr-42\n\nWhen run inside a clone of the PR's repo, checkout happens in place. Otherwise ado clones the repo to ~/.ado/reviews/<repo>-pr-<id> unless --dir is supplied. Same-repo PRs only — forked PRs are not supported."
     )]
     Checkout(CheckoutArgs),
+
+    /// Remove local pull request review clones
+    #[command(
+        after_help = "Examples:\n  ado pr checkout-clean 42\n  ado pr checkout-clean --all\n  ado pr checkout-clean 42 --dry-run\n\nBy default this removes review clones under ~/.ado/reviews. Use --dir to point at a different review-clone root."
+    )]
+    CheckoutClean(CheckoutCleanArgs),
 }
 
 #[derive(Args)]
@@ -136,7 +146,7 @@ pub struct CreateArgs {
     pub field: Vec<String>,
 }
 
-#[derive(Copy, Clone, Debug, ValueEnum)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum PrStatus {
     Active,
     Completed,
@@ -183,9 +193,10 @@ pub struct LinkWorkItemArgs {
     #[arg(value_name = "ID")]
     pub id: u32,
 
-    /// Work item ID to link to the pull request
-    #[arg(long, value_name = "ID")]
-    pub work_item: u32,
+    /// Work item ID(s) to link to the pull request. Repeat the flag for
+    /// multiple ids, or omit and pipe ids on stdin (one per line or JSON array).
+    #[arg(long = "work-item", value_name = "ID")]
+    pub work_item: Vec<u32>,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
     #[arg(long, value_name = "REPO")]
@@ -382,17 +393,45 @@ pub struct CheckoutArgs {
     pub id: u32,
 
     /// Local branch name to create (defaults to the PR's source branch name)
-    #[arg(long, value_name = "BRANCH")]
+    #[arg(long, value_name = "BRANCH", conflicts_with = "detach")]
     pub branch: Option<String>,
+
+    /// Check out the PR source commit detached instead of creating/updating a branch
+    #[arg(long)]
+    pub detach: bool,
+
+    /// Directory to clone/use when not checking out in the current repository
+    #[arg(long, value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
+    pub dir: Option<PathBuf>,
 
     /// Repository name (defaults to ADO_REPO env var or origin remote)
     #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
 }
 
+#[derive(Args)]
+#[command(group(clap::ArgGroup::new("target").required(true).multiple(false).args(["id", "all"])))]
+pub struct CheckoutCleanArgs {
+    /// Pull request ID whose review clone should be removed
+    #[arg(value_name = "ID")]
+    pub id: Option<u32>,
+
+    /// Remove all review clones under the review-clone root
+    #[arg(long)]
+    pub all: bool,
+
+    /// Print what would be removed without deleting anything
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Review-clone root directory (defaults to ~/.ado/reviews)
+    #[arg(long, value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
+    pub dir: Option<PathBuf>,
+}
+
 // ── ADO API response shapes ──────────────────────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PullRequest {
     #[serde(rename = "pullRequestId")]
     pub id: u32,
@@ -421,7 +460,7 @@ pub struct PullRequest {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct IdentityRef {
     #[serde(rename = "displayName")]
     pub display_name: String,
@@ -433,19 +472,19 @@ pub struct IdentityRef {
     pub id: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PrListResponse {
     pub value: Vec<PullRequest>,
     pub count: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PrThreadListResponse {
     pub value: Vec<PrThread>,
     pub count: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PrThread {
     pub id: u32,
 
@@ -468,7 +507,7 @@ pub struct PrThread {
     pub is_deleted: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PrThreadComment {
     pub id: u32,
 
@@ -494,7 +533,7 @@ pub struct PrThreadComment {
     pub is_deleted: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PrThreadContext {
     #[serde(default, rename = "filePath")]
     pub file_path: Option<String>,
@@ -512,7 +551,7 @@ pub struct PrThreadContext {
     pub right_file_end: Option<PrCommentPosition>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PrCommentPosition {
     pub line: u32,
 
@@ -525,14 +564,14 @@ struct IdentitiesResponse {
     value: Vec<IdentityRef>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PolicyEvaluationsResponse {
     pub value: Vec<PolicyEvaluation>,
     #[serde(default)]
     pub count: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PolicyEvaluation {
     #[serde(default, rename = "evaluationId")]
     pub evaluation_id: String,
@@ -552,7 +591,7 @@ pub struct PolicyEvaluation {
     pub context: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PolicyConfiguration {
     #[serde(default, rename = "isBlocking")]
     pub is_blocking: bool,
@@ -564,7 +603,7 @@ pub struct PolicyConfiguration {
     pub policy_type: Option<PolicyType>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PolicyType {
     #[serde(default, rename = "displayName")]
     pub display_name: String,
@@ -573,9 +612,30 @@ pub struct PolicyType {
     pub id: String,
 }
 
+/// Response from a PUT to `reviewers/{id}` — what `ado pr approve` emits.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct PrReviewer {
+    #[serde(default)]
+    pub vote: i32,
+    #[serde(default, rename = "displayName")]
+    pub display_name: String,
+    #[serde(default, rename = "uniqueName")]
+    pub unique_name: String,
+    #[serde(default)]
+    pub id: String,
+    #[serde(default, rename = "isRequired")]
+    pub is_required: bool,
+    #[serde(default, rename = "isFlagged")]
+    pub is_flagged: bool,
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
 // ── Command dispatch ─────────────────────────────────────────────────────────
 
-pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
+pub async fn run(args: PrArgs, ctx: &CmdCtx<'_>) -> Result<()> {
+    let client = ctx.client;
+    let output = &ctx.output;
     match args.command {
         PrCommand::Create(a) => create(a, client, output).await,
         PrCommand::List(a) => list(a, client, output).await,
@@ -591,32 +651,21 @@ pub async fn run(args: PrArgs, client: &AdoClient, output: &OutputFormat) -> Res
         PrCommand::Complete(a) => complete(a, client, output).await,
         PrCommand::Abandon(a) => abandon(a, client, output).await,
         PrCommand::Reactivate(a) => reactivate(a, client, output).await,
-        PrCommand::Open(a) => open(a, client).await,
+        PrCommand::Open(a) => open(a, client, ctx.quiet).await,
         PrCommand::Checkout(a) => checkout(a, client).await,
+        PrCommand::CheckoutClean(a) => checkout_clean(a).await,
     }
 }
 
 // ── list ────────────────────────────────────────────────────────────────────
 
 async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
-    let repo = resolve_repo_optional(args.repo.as_deref());
+    let repo = args.repo;
     let status = args.status.as_str();
-    let project = project_segment(client);
-    let path = match &repo {
-        Some(r) => format!(
-            "{}/_apis/git/repositories/{}/pullrequests?searchCriteria.status={}&api-version=7.1",
-            project,
-            repo_segment(r),
-            encode_path_segment(status)
-        ),
-        None => format!(
-            "{}/_apis/git/pullrequests?searchCriteria.status={}&api-version=7.1",
-            project,
-            encode_path_segment(status)
-        ),
+    let resp = match &repo {
+        Some(r) => fetch_pull_requests(client, r, args.status).await?,
+        None => fetch_project_pull_requests(client, args.status).await?,
     };
-
-    let resp: PrListResponse = client.get_json(&path).await?;
 
     match output {
         OutputFormat::Json => output::print_json(&resp)?,
@@ -675,6 +724,49 @@ async fn list(args: ListArgs, client: &AdoClient, output: &OutputFormat) -> Resu
     Ok(())
 }
 
+async fn fetch_pull_requests(
+    client: &AdoClient,
+    repo: &str,
+    status: PrStatus,
+) -> Result<PrListResponse> {
+    let path = format!(
+        "{}/_apis/git/repositories/{}/pullrequests?searchCriteria.status={}&api-version=7.1",
+        project_segment(client),
+        repo_segment(repo),
+        encode_path_segment(status.as_str())
+    );
+    client.get_json(&path).await
+}
+
+async fn fetch_project_pull_requests(
+    client: &AdoClient,
+    status: PrStatus,
+) -> Result<PrListResponse> {
+    let repos_path = format!(
+        "{}/_apis/git/repositories?api-version=7.1",
+        project_segment(client)
+    );
+    let repos: repo::RepoListResponse = client.get_json(&repos_path).await?;
+    let statuses: &[PrStatus] = if status == PrStatus::All {
+        &[PrStatus::Active, PrStatus::Completed, PrStatus::Abandoned]
+    } else {
+        std::slice::from_ref(&status)
+    };
+
+    let mut prs = Vec::new();
+    for repository in repos.value {
+        for status in statuses {
+            let mut resp = fetch_pull_requests(client, &repository.id, *status).await?;
+            prs.append(&mut resp.value);
+        }
+    }
+    prs.sort_by(|a, b| b.id.cmp(&a.id));
+    Ok(PrListResponse {
+        count: prs.len() as u32,
+        value: prs,
+    })
+}
+
 // ── view ────────────────────────────────────────────────────────────────────
 
 async fn view(args: ViewArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
@@ -720,6 +812,8 @@ async fn link_work_item(
     client: &AdoClient,
     output: &OutputFormat,
 ) -> Result<()> {
+    let work_items = crate::stdin_ids::read_ids(&args.work_item)?;
+
     let repo = resolve_repo_required(args.repo.as_deref())?;
     let pr_path = format!(
         "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
@@ -740,14 +834,40 @@ async fn link_work_item(
         })?;
 
     let ops = build_pr_artifact_link_patch(artifact_id);
-    let wi_path = format!("_apis/wit/workitems/{}?api-version=7.1", args.work_item);
-    let wi: serde_json::Value = client.patch_json_patch(&wi_path, &ops).await?;
+
+    // Continue-on-failure mirrors `wi update`: one bad WI shouldn't block the
+    // rest of the batch. Successes & failures are reported together at the end.
+    let mut linked: Vec<WorkItem> = Vec::with_capacity(work_items.len());
+    let mut failures: Vec<(u32, anyhow::Error)> = Vec::new();
+    for wi_id in &work_items {
+        let wi_path = format!("_apis/wit/workitems/{wi_id}?api-version=7.1");
+        match client.patch_json_patch::<_, WorkItem>(&wi_path, &ops).await {
+            Ok(wi) => linked.push(wi),
+            Err(e) => failures.push((*wi_id, e)),
+        }
+    }
+
+    let explain = client.explain_enabled();
 
     match output {
-        OutputFormat::Json => output::print_json(&wi)?,
+        OutputFormat::Json => output::print_json(&linked)?,
         OutputFormat::Text | OutputFormat::Table => {
-            println!("Linked work item #{} to PR #{}", args.work_item, args.id);
+            for wi in &linked {
+                println!("Linked work item #{} to PR #{}", wi.id, args.id);
+            }
+            if !explain {
+                for (wi_id, err) in &failures {
+                    eprintln!("Failed #{wi_id}: {err}");
+                }
+            }
         }
+    }
+
+    if !failures.is_empty() {
+        if explain {
+            return Err(crate::error::CliError::Explain.into());
+        }
+        bail!("{}/{} links failed", failures.len(), work_items.len());
     }
     Ok(())
 }
@@ -964,14 +1084,9 @@ async fn approve(args: ApproveArgs, client: &AdoClient, output: &OutputFormat) -
         args.id,
         encode_path_segment(&user_id)
     );
-    let resp = client
-        .put(&path) // helper added below
-        .header("Content-Type", "application/json")
-        .json(&json!({ "vote": args.vote }))
-        .send()
+    let reviewer: PrReviewer = client
+        .put_json(&path, &json!({ "vote": args.vote }))
         .await?;
-    let resp = AdoClient::check_response(resp).await?;
-    let reviewer: serde_json::Value = resp.json().await.context("failed to parse JSON response")?;
 
     match output {
         OutputFormat::Json => output::print_json(&reviewer)?,
@@ -1158,10 +1273,10 @@ async fn reactivate(args: ReactivateArgs, client: &AdoClient, output: &OutputFor
 
 // ── open ────────────────────────────────────────────────────────────────────
 
-async fn open(args: OpenArgs, client: &AdoClient) -> Result<()> {
+async fn open(args: OpenArgs, client: &AdoClient, quiet: bool) -> Result<()> {
     let repo = resolve_repo_required(args.repo.as_deref())?;
     let url = web_url(client, &repo, args.id);
-    println!("Opening PR #{} in browser...", args.id);
+    output::banner(quiet, &format!("Opening PR #{} in browser...", args.id));
     AdoClient::open_in_browser(&url)
 }
 
@@ -1169,21 +1284,6 @@ async fn open(args: OpenArgs, client: &AdoClient) -> Result<()> {
 
 async fn checkout(args: CheckoutArgs, client: &AdoClient) -> Result<()> {
     let repo = resolve_repo_required(args.repo.as_deref())?;
-
-    let current_repo = repo_from_remote().with_context(|| {
-        format!(
-            "could not detect git repo from origin remote — run this command inside a clone of '{repo}'"
-        )
-    })?;
-    if !current_repo.eq_ignore_ascii_case(&repo) {
-        bail!(
-            "current repo is '{current_repo}' but PR #{} belongs to '{repo}' — run this command inside a clone of '{repo}'",
-            args.id
-        );
-    }
-
-    require_clean_working_tree()?;
-
     let pr_path = format!(
         "{}/_apis/git/repositories/{}/pullrequests/{}?api-version=7.1",
         project_segment(client),
@@ -1211,21 +1311,172 @@ async fn checkout(args: CheckoutArgs, client: &AdoClient) -> Result<()> {
         None => source_branch.to_string(),
     };
 
-    let fetch_spec = format!("refs/heads/{source_branch}:{local_branch}");
-    run_git(None, &["fetch", "origin", &fetch_spec])
-        .with_context(|| format!("git fetch origin {fetch_spec} failed"))?;
-    run_git(None, &["checkout", &local_branch])
-        .with_context(|| format!("git checkout {local_branch} failed"))?;
+    let checkout_dir = checkout_target_dir(client, &repo, args.id, args.dir.as_deref()).await?;
+    require_clean_working_tree(Some(&checkout_dir))?;
+    checkout_source_branch(&checkout_dir, source_branch, &local_branch, args.detach)?;
 
-    println!(
-        "Checked out PR #{} ({} -> {})",
-        args.id, source_branch, local_branch
-    );
+    if args.detach {
+        println!(
+            "Checked out PR #{} at {} in {} (detached)",
+            args.id,
+            source_branch,
+            checkout_dir.display()
+        );
+    } else {
+        println!(
+            "Checked out PR #{} ({} -> {}) in {}",
+            args.id,
+            source_branch,
+            local_branch,
+            checkout_dir.display()
+        );
+    }
     Ok(())
 }
 
-fn require_clean_working_tree() -> Result<()> {
-    let out = Command::new("git")
+async fn checkout_target_dir(
+    client: &AdoClient,
+    repo_name: &str,
+    pr_id: u32,
+    requested_dir: Option<&Path>,
+) -> Result<PathBuf> {
+    if let Some(dir) = requested_dir {
+        ensure_review_clone(client, repo_name, dir).await?;
+        return Ok(dir.to_path_buf());
+    }
+
+    if repo_from_remote_in(None)
+        .as_deref()
+        .is_some_and(|current| current.eq_ignore_ascii_case(repo_name))
+    {
+        return std::env::current_dir().context("could not determine current directory");
+    }
+
+    let dir = default_review_dir()?.join(format!("{repo_name}-pr-{pr_id}"));
+    ensure_review_clone(client, repo_name, &dir).await?;
+    Ok(dir)
+}
+
+async fn ensure_review_clone(client: &AdoClient, repo_name: &str, dir: &Path) -> Result<()> {
+    if dir.exists() {
+        if !dir.is_dir() {
+            bail!("{} exists but is not a directory", dir.display());
+        }
+        let current_repo = repo_from_remote_in(Some(dir)).with_context(|| {
+            format!(
+                "{} exists but does not look like a git clone with an origin remote",
+                dir.display()
+            )
+        })?;
+        if !current_repo.eq_ignore_ascii_case(repo_name) {
+            bail!(
+                "{} is a clone of '{current_repo}', not '{repo_name}'",
+                dir.display()
+            );
+        }
+        return Ok(());
+    }
+
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+
+    let repo = repo::lookup_repo(client, &client.project, repo_name).await?;
+    let auth_url = repo::inject_pat(&repo.remote_url, client.pat())?;
+    let dest = dir_string(dir);
+    run_git(None, &["clone", &auth_url, &dest])
+        .with_context(|| format!("git clone {} failed", repo.remote_url))?;
+    run_git(
+        Some(dir),
+        &["remote", "set-url", "origin", repo.remote_url.as_str()],
+    )
+    .with_context(|| format!("failed to rewrite origin URL in {}", dir.display()))?;
+    Ok(())
+}
+
+fn checkout_source_branch(
+    dir: &Path,
+    source_branch: &str,
+    local_branch: &str,
+    detach: bool,
+) -> Result<()> {
+    let source_ref = format!("refs/heads/{source_branch}");
+    run_git(Some(dir), &["fetch", "origin", &source_ref])
+        .with_context(|| format!("git fetch origin {source_ref} failed"))?;
+    if detach {
+        run_git(Some(dir), &["checkout", "--detach", "FETCH_HEAD"])
+            .context("git checkout --detach FETCH_HEAD failed")?;
+    } else {
+        run_git(Some(dir), &["checkout", "-B", local_branch, "FETCH_HEAD"])
+            .with_context(|| format!("git checkout -B {local_branch} FETCH_HEAD failed"))?;
+    }
+    Ok(())
+}
+
+async fn checkout_clean(args: CheckoutCleanArgs) -> Result<()> {
+    let root = args.dir.unwrap_or(default_review_dir()?);
+    let targets = checkout_clean_targets(&root, args.id, args.all)?;
+
+    if targets.is_empty() {
+        println!("(no PR review clones found in {})", root.display());
+        return Ok(());
+    }
+
+    for target in targets {
+        if args.dry_run {
+            println!("would remove {}", target.display());
+        } else {
+            std::fs::remove_dir_all(&target)
+                .with_context(|| format!("removing {}", target.display()))?;
+            println!("removed {}", target.display());
+        }
+    }
+    Ok(())
+}
+
+fn checkout_clean_targets(root: &Path, id: Option<u32>, all: bool) -> Result<Vec<PathBuf>> {
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    if !root.is_dir() {
+        bail!("{} exists but is not a directory", root.display());
+    }
+
+    let suffix = id.map(|id| format!("-pr-{id}"));
+    let mut targets = Vec::new();
+    for entry in std::fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if all
+            || suffix.as_deref().is_some_and(|suffix| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.ends_with(suffix))
+            })
+        {
+            targets.push(path);
+        }
+    }
+    targets.sort();
+    Ok(targets)
+}
+
+fn default_review_dir() -> Result<PathBuf> {
+    dirs::home_dir()
+        .map(|home| home.join(".ado").join("reviews"))
+        .context("could not locate home directory for ~/.ado/reviews")
+}
+
+fn require_clean_working_tree(cwd: Option<&Path>) -> Result<()> {
+    let mut cmd = Command::new("git");
+    if let Some(dir) = cwd {
+        cmd.arg("-C").arg(dir);
+    }
+    let out = cmd
         .args(["status", "--porcelain"])
         .output()
         .context("failed to run git status")?;
@@ -1233,9 +1484,15 @@ fn require_clean_working_tree() -> Result<()> {
         bail!("git status failed — is this a git repository?");
     }
     if !out.stdout.is_empty() {
-        bail!("working tree has uncommitted changes; commit or stash them before checking out a PR");
+        bail!(
+            "working tree has uncommitted changes; commit or stash them before checking out a PR"
+        );
     }
     Ok(())
+}
+
+fn dir_string(dir: &Path) -> String {
+    dir.to_string_lossy().into_owned()
 }
 
 fn run_git(cwd: Option<&Path>, args: &[&str]) -> Result<()> {
@@ -1549,10 +1806,15 @@ fn current_branch() -> Result<String> {
 }
 
 fn repo_from_remote() -> Option<String> {
-    let out = Command::new("git")
-        .args(["remote", "get-url", "origin"])
-        .output()
-        .ok()?;
+    repo_from_remote_in(None)
+}
+
+fn repo_from_remote_in(cwd: Option<&Path>) -> Option<String> {
+    let mut cmd = Command::new("git");
+    if let Some(dir) = cwd {
+        cmd.arg("-C").arg(dir);
+    }
+    let out = cmd.args(["remote", "get-url", "origin"]).output().ok()?;
     if !out.status.success() {
         return None;
     }

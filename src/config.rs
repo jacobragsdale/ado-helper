@@ -3,6 +3,8 @@ use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::commands::me::MeInfo;
+
 /// Top-level args for `ado config`
 #[derive(Args)]
 #[command(
@@ -37,6 +39,10 @@ pub struct SetArgs {
     /// Default project name
     #[arg(long, value_name = "PROJECT")]
     pub project: Option<String>,
+
+    /// Default team name
+    #[arg(long, value_name = "TEAM")]
+    pub team: Option<String>,
 }
 
 /// Persisted configuration stored in the OS config dir (e.g. ~/.config/ado/config.toml)
@@ -47,6 +53,16 @@ pub struct Config {
 
     /// Default project name used when --project is not provided
     pub project: Option<String>,
+
+    /// Default team name used when --team is not provided. Consumed by
+    /// commands that scope to a team (iteration, capacity, board, sprint).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team: Option<String>,
+
+    /// Cached caller identity, written by `ado me` and read by commands that
+    /// need to resolve "me" (e.g. `wi list --assigned-to me`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<MeInfo>,
 }
 
 impl Config {
@@ -87,6 +103,9 @@ pub async fn run(args: ConfigArgs) -> Result<()> {
             if set.project.is_some() {
                 cfg.project = set.project;
             }
+            if set.team.is_some() {
+                cfg.team = set.team;
+            }
             cfg.save()?;
             println!("Configuration saved to {}", Config::path()?.display());
         }
@@ -99,10 +118,22 @@ pub async fn run(args: ConfigArgs) -> Result<()> {
                 "project:     {}",
                 cfg.project.as_deref().unwrap_or("(not set)")
             );
+            println!(
+                "team:        {}",
+                cfg.team.as_deref().unwrap_or("(not set)")
+            );
+            match &cfg.identity {
+                Some(id) => println!(
+                    "identity:    {} <{}> (cached — refresh with `ado me refresh`)",
+                    id.display_name, id.unique_name
+                ),
+                None => println!("identity:    (not cached — run `ado me`)"),
+            }
             println!();
             println!("environment overrides (loaded from .env if present):");
             print_env("ADO_ORG_URL");
             print_env("ADO_PROJECT");
+            print_env("ADO_TEAM");
             match std::env::var("ADO_PAT") {
                 Ok(_) => println!("  ADO_PAT     = (set, hidden)"),
                 Err(_) => println!("  ADO_PAT     = (not set)"),

@@ -4,12 +4,15 @@
 
 ## Features
 
-- Configure a default Azure DevOps organization and project.
+- Configure a default Azure DevOps organization, project, and team.
+- Show the caller's identity (`ado me`), team membership, iterations, and area paths.
 - List, create, clone, delete, and inspect Git repository branches, tags, and commits.
 - Create, inspect, review, comment on, and complete pull requests.
 - List pipelines and runs, start runs, inspect logs, preview YAML, and check or watch run status.
 - Create, query, update, link, comment on, attach files to, and open work items.
-- Print text, table, or JSON output for scripting.
+- Discover work item types, states, and field reference names without scraping the web UI.
+- Print text, table, or JSON output for scripting, with stable typed schemas (`ado schema`).
+- Agent-friendly chassis: predictable exit codes, `--explain` dry-runs, `--quiet`, and stdin batching for mutations.
 
 ## Installation
 
@@ -43,6 +46,7 @@ Copy `.env.example` to `.env` for per-checkout settings:
 ```sh
 ADO_ORG_URL=https://dev.azure.com/your-org
 ADO_PROJECT=your-project
+ADO_TEAM=your-team
 ADO_REPO=your-repo
 ADO_PAT=your-personal-access-token
 ```
@@ -50,17 +54,17 @@ ADO_PAT=your-personal-access-token
 You can also save non-secret defaults in the OS config directory:
 
 ```sh
-ado config set --org https://dev.azure.com/your-org --project your-project
+ado config set --org https://dev.azure.com/your-org --project your-project --team "Your Team"
 ado config show
 ```
 
 Configuration precedence is:
 
-1. CLI flags: `--org`, `--project`
+1. CLI flags: `--org`, `--project`, `--team`
 2. Environment variables, including values loaded from `.env`
 3. Saved config from `ado config set`
 
-`ADO_PAT` is only read from the environment or `.env`; it is not written to the saved config file. `ADO_REPO` is optional and is used by PR and repo inspection commands when `--repo` is omitted. If neither is set, those commands try to infer the repo from the current git `origin` remote.
+`ADO_PAT` is only read from the environment or `.env`; it is not written to the saved config file. `ADO_REPO` is optional and is used by PR and repo inspection commands when `--repo` is omitted. If neither is set, those commands try to infer the repo from the current git `origin` remote. `ADO_TEAM` is used by team-scoped commands (`iteration`, future capacity/board/sprint); set it once with `ado team set <name>` and `ado config show` will report the resolved value.
 
 ## Global Options
 
@@ -72,15 +76,105 @@ ado repo list --output table
 ado pr view 42 --repo my-service --output json
 ```
 
+| Flag | Purpose |
+| --- | --- |
+| `--org <URL>` | Override the saved organization URL for this call. |
+| `--project <NAME>` | Override the saved project for this call. |
+| `--team <NAME>` | Override the saved team for this call (used by iteration and future sprint commands). |
+| `--output <text\|table\|json>` | Output mode (default `text`). |
+| `--quiet` | Suppress decorative banners and progress hints. Result lines and errors still print. |
+| `--explain` | Dry-run: print the would-be REST call(s) for any mutation and exit 0 without touching ADO. |
+
 Output modes:
 
 - `text`: concise human-readable output, the default.
 - `table`: aligned columns where useful.
-- `json`: full API response for scripts and automation.
+- `json`: typed, stable schema discoverable via `ado schema <command>`.
+
+## Output Contract
+
+Every command that supports `--output json` emits a typed struct rather than a raw passthrough of the ADO REST response. The shape is stable across patch releases and discoverable at runtime:
+
+```sh
+ado schema --list        # every command path with a registered schema
+ado schema wi view       # the JSON Schema for `ado wi view --output json`
+ado schema iteration current --output json
+```
+
+Agents should rely on the published schema, not on field-by-field shape inference. Adding new fields to an existing schema is a non-breaking change; renaming or removing a field is not. `ado schema --list --output json` returns a JSON array of paths suitable for automation.
+
+## Exit Codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success. `--explain` dry-runs also exit `0`. |
+| `1` | Unclassified error (CLI argument parsing failures, I/O errors, unexpected panics caught by the runtime). |
+| `2` | Not found — the targeted work item, iteration, schema path, or other resource does not exist. |
+| `3` | Validation — missing or malformed input (bad ids on stdin, missing required flags). |
+| `4` | Auth — Azure DevOps rejected the PAT (HTTP 401/403). |
+| `5` | API — Azure DevOps returned a 4xx/5xx that was not auth/not-found. |
+
+Agents can branch on these codes without parsing stderr.
+
+## Stdin Batching
+
+Mutation commands accept ids on stdin so an agent can chain `ado wi query --output json` (or `ado wi list`) into a follow-up mutation without an awk dance:
+
+```sh
+ado wi list --assigned-to me | ado wi update --tags "rolled-over"
+ado wi query --wiql "..." --output json | jq '[.[].id]' | ado wi update --state Closed
+echo '[123, 124]' | ado pr link-work-item 42 --repo my-service
+```
+
+Accepted input forms when ids are read from stdin:
+
+- One id per line (blanks ignored; a leading `#` is tolerated so `ado wi list` text output drops in directly).
+- A JSON array of integers (e.g. `[1, 2, 3]`).
+
+If no ids are provided as arguments and stdin is a TTY, the command exits `3` (validation) with a clear message rather than blocking on stdin. Today this works for `ado wi update` and `ado pr link-work-item`.
 
 ## Command Guide
 
 Use `ado --help`, `ado help <command>`, or `ado <command> --help` to navigate the built-in help tree.
+
+### Foundation
+
+These commands describe *you*, your team, and the iteration/area shape of your project. Higher-level workflows (sprint planning, standup digests) are built on top of them.
+
+```sh
+ado me                       # show the caller's identity (cached after first call)
+ado me refresh               # force a fresh fetch and overwrite the cache
+
+ado team list --output table
+ado team set "My Team"       # persist as the default team for this project
+ado team current
+ado team members
+
+ado iteration list --output table
+ado iteration current        # alias for `iteration view @current`
+ado iteration next           # alias for `iteration view @next`
+ado iteration view @previous
+
+ado area tree --depth 3
+ado area list                # flat backslash-separated paths, paste-ready into --area
+```
+
+`ado me` writes the caller's identity to the config file. Commands that resolve "me" (`wi list --assigned-to me`, future `my queue`) read the cached identity instead of round-tripping `_apis/connectionData` on every call. Use `ado me refresh` after switching orgs.
+
+Iteration shortcuts: `@current`, `@next`, `@previous` (and the aliases `@now`, `@prev`) work anywhere an iteration reference is accepted. They resolve against the team selected by `--team` / `ADO_TEAM` / saved config.
+
+### Schemas & Metadata Discovery
+
+```sh
+ado schema --list                   # every command path with a registered output schema
+ado schema wi view                  # JSON Schema for `ado wi view --output json`
+ado wi types --output table         # work item types defined in the project
+ado wi states "User Story"          # valid states for a work item type
+ado wi fields --type Bug            # field names + reference names for a type
+ado wi fields                       # all fields in the project
+```
+
+`reference_name` (e.g. `Microsoft.VSTS.Common.Priority`) is the canonical identifier used in WIQL and `--field NAME=VALUE`. The `name` column is the human label shown in the web UI.
 
 ### Repositories
 
@@ -109,6 +203,8 @@ ado pr list --repo my-service --status active --output table
 ado pr view 42 --repo my-service
 ado pr update 42 --repo my-service --title "Add readiness check" --field draft=false
 ado pr link-work-item 42 --repo my-service --work-item 123
+ado pr link-work-item 42 --repo my-service --work-item 123 --work-item 124
+echo "123\n124" | ado pr link-work-item 42 --repo my-service
 ado pr checks 42 --repo my-service
 ado pr approve 42 --repo my-service --vote 10
 ado pr comment 42 --repo my-service --text "Looks good to me."
@@ -130,6 +226,8 @@ PR status values are `active`, `completed`, `abandoned`, and `all`.
 Merge strategies are `squash`, `noFastForward`, `rebase`, and `rebaseMerge`.
 
 `ado pr link-work-item` creates Azure DevOps' native pull request relation on the work item. This differs from `ado wi link --hyperlink`: Azure DevOps recognizes the native relation as a PR link and shows it from both the pull request and work item views.
+
+`ado pr list` searches across every repo in the project when `--repo` is omitted. Other repo-specific PR commands use `ADO_REPO` or the current git `origin` remote when `--repo` is omitted.
 
 Useful aliases:
 
@@ -165,6 +263,8 @@ ado wi query --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject
 ado wi query --file ./bugs.wiql --output table
 ado wi view 123
 ado wi update 123 --state Closed --field priority=2
+ado wi update 123 124 125 --tags "release;docs"
+ado wi list --assigned-to me | ado wi update --state Closed
 ado wi comment 123 --text "<p>Validated in staging.</p>"
 ado wi comments 123
 ado wi comment-edit 123 456 --text "<p>Updated comment.</p>"
@@ -254,6 +354,11 @@ Useful help smoke checks:
 
 ```sh
 cargo run -- --help
+cargo run -- me --help
+cargo run -- team --help
+cargo run -- iteration --help
+cargo run -- area --help
+cargo run -- schema --help
 cargo run -- pr --help
 cargo run -- pr link-work-item --help
 cargo run -- pr checks --help
@@ -261,7 +366,11 @@ cargo run -- pr checkout --help
 cargo run -- pr checkout-clean --help
 cargo run -- wi --help
 cargo run -- wi create --help
+cargo run -- wi update --help
 cargo run -- wi query --help
+cargo run -- wi types --help
+cargo run -- wi states --help
+cargo run -- wi fields --help
 cargo run -- pr complete --help
 cargo run -- pipeline runs --help
 cargo run -- pipeline logs --help
@@ -269,4 +378,35 @@ cargo run -- pipeline preview --help
 cargo run -- repo branches --help
 cargo run -- repo tags --help
 cargo run -- repo commits --help
+```
+
+Live end-to-end smoke (requires `.env` with a valid PAT/org/project; `ADO_TEAM` or a saved team is needed for iteration commands):
+
+```sh
+cargo run -- me
+cargo run -- team list --output table
+cargo run -- iteration current
+cargo run -- area tree --depth 3
+cargo run -- wi types --output table
+cargo run -- schema --list
+cargo run -- schema wi view
+
+# Chassis behaviours
+cargo run -- wi view 999999999          # expect exit 2 (NotFound)
+cargo run -- --explain wi update 123 --state Closed   # prints DRY-RUN, exit 0
+echo "123\n124" | cargo run -- --explain wi update --state Closed
+```
+
+Full live E2E suite (creates disposable ADO repos, PRs, work items, comments, attachments, and a YAML pipeline, then cleans them up):
+
+```sh
+tests/live-e2e.sh
+```
+
+Useful toggles:
+
+```sh
+ADO_E2E_KEEP_RESOURCES=1 tests/live-e2e.sh      # keep created ADO resources for debugging
+ADO_E2E_SKIP_PIPELINE=1 tests/live-e2e.sh       # skip pipeline creation/run/log checks
+ADO_E2E_PIPELINE_TIMEOUT_SECONDS=600 tests/live-e2e.sh
 ```
