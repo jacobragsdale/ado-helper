@@ -11,7 +11,7 @@ mod output;
 mod stdin_ids;
 
 use client::AdoClient;
-use commands::{area, iteration, me, pipeline, pr, repo, schema, team, workitem};
+use commands::{area, iteration, me, pipeline, pr, repo, schema, sprint, team, workitem};
 use config::Config;
 use context::CmdCtx;
 use error::CliError;
@@ -103,6 +103,12 @@ enum Commands {
         after_help = "Examples:\n  ado pipeline list --output table\n  ado pipeline run build-main --branch main --var smoke=true\n  ado pipeline runs build-main --max 5\n  ado pipeline logs 12345 --pipeline-id 67 2\n  ado pipeline preview build-main --branch main"
     )]
     Pipeline(pipeline::PipelineArgs),
+
+    /// Sprint planning, capacity, rollover, and reporting helpers
+    #[command(
+        after_help = "Examples:\n  ado sprint backlog --iteration @next --output table\n  ado sprint board --iteration @current\n  ado sprint plan-into 123 124 --iteration @next --assigned-to me\n  ado sprint capacity\n  ado sprint capacity set --member me --hours-per-day 6 --activity Development\n  ado sprint burndown --by member\n  ado sprint rollover --dry-run\n  ado sprint summary\n\nRequires a team — pass --team, set ADO_TEAM, or run `ado team set <name>`."
+    )]
+    Sprint(sprint::SprintArgs),
 
     /// Manage work items (alias: wi)
     #[command(
@@ -216,6 +222,16 @@ async fn dispatch(cli: Cli) -> Result<()> {
                 team,
             };
             pipeline::run(args, &ctx).await
+        }
+        Commands::Sprint(args) => {
+            let client = build_client(cli.org, cli.project, explain)?;
+            let ctx = CmdCtx {
+                client: &client,
+                output,
+                quiet,
+                team,
+            };
+            sprint::run(args, &ctx).await
         }
         Commands::WorkItem(args) => {
             let client = build_client(cli.org, cli.project, explain)?;

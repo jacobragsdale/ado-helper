@@ -9,6 +9,7 @@ use crate::output::{self, OutputFormat};
 
 const WI_LIST_HEADERS: &[&str] = &["ID", "Type", "State", "Title", "Assignee"];
 
+use super::api;
 use super::args::{
     AttachArgs, CommentArgs, CommentDeleteArgs, CommentEditArgs, CommentsArgs, CreateArgs,
     DeleteArgs, FieldsArgs, HistoryArgs, LinkArgs, LinkRmArgs, LinksArgs, ListArgs, OpenArgs,
@@ -18,8 +19,7 @@ use super::flags::build_field_ops;
 use super::helpers::{encode_path, escape_wiql, field_str, workitem_url};
 use super::types::{
     AttachResult, AttachmentRef, FieldListResponse, PatchOp, StateListResponse, WiComment,
-    WiCommentList, WiHistoryResponse, WiqlResult, WiqlWorkItemRef, WorkItem, WorkItemBatch,
-    WorkItemTypeListResponse,
+    WiCommentList, WorkItem, WorkItemTypeListResponse,
 };
 
 pub async fn dispatch(args: WorkItemArgs, ctx: &CmdCtx<'_>) -> Result<()> {
@@ -114,13 +114,7 @@ async fn run_wiql_query(
     wiql: &str,
     output: &OutputFormat,
 ) -> Result<()> {
-    let wiql_path = format!(
-        "{project}/_apis/wit/wiql?api-version=7.1",
-        project = encode_path(project)
-    );
-    let result: WiqlResult = client
-        .post_json(&wiql_path, &json!({ "query": wiql }))
-        .await?;
+    let result = api::run_wiql(client, project, wiql, None).await?;
 
     if result.work_items.is_empty() {
         if matches!(output, OutputFormat::Json) {
@@ -131,24 +125,15 @@ async fn run_wiql_query(
         return Ok(());
     }
 
-    let items = fetch_work_items(client, &result.work_items).await?;
+    let fields = [
+        "System.Id",
+        "System.Title",
+        "System.State",
+        "System.WorkItemType",
+        "System.AssignedTo",
+    ];
+    let items = api::fetch_work_items(client, &result.work_items, &fields).await?;
     print_work_items(&items, output)
-}
-
-async fn fetch_work_items(client: &AdoClient, refs: &[WiqlWorkItemRef]) -> Result<Vec<WorkItem>> {
-    let mut items: Vec<WorkItem> = Vec::with_capacity(refs.len());
-    let fields = "System.Id,System.Title,System.State,System.WorkItemType,System.AssignedTo";
-    for chunk in refs.chunks(200) {
-        let ids = chunk
-            .iter()
-            .map(|w| w.id.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        let path = format!("_apis/wit/workitems?ids={ids}&fields={fields}&api-version=7.1");
-        let batch: WorkItemBatch = client.get_json(&path).await?;
-        items.extend(batch.value);
-    }
-    Ok(items)
 }
 
 fn print_work_items(items: &[WorkItem], output: &OutputFormat) -> Result<()> {
@@ -356,8 +341,7 @@ async fn update(args: UpdateArgs, client: &AdoClient, output: &OutputFormat) -> 
     let mut updated: Vec<WorkItem> = Vec::with_capacity(ids.len());
     let mut failures: Vec<(u32, anyhow::Error)> = Vec::new();
     for id in &ids {
-        let path = format!("_apis/wit/workitems/{id}?api-version=7.1");
-        match client.patch_json_patch::<_, WorkItem>(&path, &ops).await {
+        match api::patch_work_item(client, *id, &ops).await {
             Ok(wi) => updated.push(wi),
             Err(e) => failures.push((*id, e)),
         }
@@ -414,14 +398,7 @@ async fn delete(args: DeleteArgs, client: &AdoClient) -> Result<()> {
 
 async fn comment(args: CommentArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
     let project = args.project.as_deref().unwrap_or(&client.project);
-    let path = format!(
-        "{project}/_apis/wit/workItems/{}/comments?api-version=7.1-preview.4",
-        args.id,
-        project = encode_path(project)
-    );
-    let resp: WiComment = client
-        .post_json(&path, &json!({ "text": args.text }))
-        .await?;
+    let resp: WiComment = api::add_comment(client, project, args.id, &args.text).await?;
 
     match output {
         OutputFormat::Json => output::print_json(&resp)?,
@@ -685,11 +662,7 @@ async fn attach(args: AttachArgs, client: &AdoClient, output: &OutputFormat) -> 
 // ── history ─────────────────────────────────────────────────────────────────
 
 async fn history(args: HistoryArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
-    let path = format!(
-        "_apis/wit/workItems/{}/updates?$top={}&api-version=7.1",
-        args.id, args.limit
-    );
-    let resp: WiHistoryResponse = client.get_json(&path).await?;
+    let resp = api::list_updates(client, &client.project, args.id, Some(args.limit)).await?;
 
     match output {
         OutputFormat::Json => output::print_json(&resp)?,

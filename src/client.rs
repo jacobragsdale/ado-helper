@@ -223,7 +223,7 @@ impl AdoClient {
     }
 
     /// PATCH with a JSON Patch body — required content-type for work item updates.
-    pub async fn patch_json_patch<B: serde::Serialize, T: DeserializeOwned>(
+    pub async fn patch_json_patch<B: serde::Serialize + ?Sized, T: DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
@@ -285,7 +285,7 @@ impl AdoClient {
     }
 }
 
-fn serialize_for_explain<B: serde::Serialize>(body: &B) -> Option<String> {
+fn serialize_for_explain<B: serde::Serialize + ?Sized>(body: &B) -> Option<String> {
     serde_json::to_string_pretty(body).ok()
 }
 
