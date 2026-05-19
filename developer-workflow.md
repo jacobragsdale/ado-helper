@@ -1,4 +1,4 @@
-# workflow.md — single-shot ADO dev cycle
+# developer-workflow.md — single-shot ADO dev cycle
 
 You are executing one developer's end-to-end SDLC loop against an Azure DevOps work item. You are given a single argument — `<wi-id>` — and the current working directory is the product repo the work will land in. Everything that touches ADO goes through the local `ado` CLI; everything that touches code goes through normal git + the repo's own toolchain.
 
@@ -210,7 +210,7 @@ Goal: create the feature branch and mark the ticket in-progress. Local action fi
    ```sh
    ado wi states "<type>" --output json
    ```
-   From the returned list, pick the first match (case-insensitive) in this preference order: `Doing`, `Active`, `In Progress`, `Committed`, `Started`. If none match, abort with the full state list and: "no in-progress state recognised for type `<type>` — extend the preference order in workflow.md."
+   From the returned list, pick the first match (case-insensitive) in this preference order: `Doing`, `Active`, `In Progress`, `Committed`, `Started`. If none match, abort with the full state list and: "no in-progress state recognised for type `<type>` — extend the preference order in developer-workflow.md."
 
 4. **Transition state:**
    ```sh
