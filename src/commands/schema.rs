@@ -130,6 +130,12 @@ fn registry() -> Vec<(&'static str, SchemaFn)> {
         ("wi links", || schema_for!(Vec<workitem::types::Relation>)),
         ("wi link-rm", || schema_for!(workitem::types::WorkItem)),
         ("wi attach", || schema_for!(workitem::types::AttachResult)),
+        ("wi attachments", || {
+            schema_for!(workitem::types::WiAttachmentList)
+        }),
+        ("wi attachment-download", || {
+            schema_for!(workitem::types::WiAttachmentDownloadResult)
+        }),
         ("wi history", || {
             schema_for!(workitem::types::WiHistoryResponse)
         }),

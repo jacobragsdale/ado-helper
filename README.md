@@ -9,7 +9,7 @@
 - List, create, clone, delete, and inspect Git repository branches, tags, and commits.
 - Create, inspect, review, comment on, and complete pull requests.
 - List pipelines and runs, start runs, inspect logs, preview YAML, and check or watch run status.
-- Create, query, update, link, comment on, attach files to, and open work items.
+- Create, query, update, link, comment on, attach/download files to/from, and open work items.
 - Plan sprint work: backlog, taskboard, plan-into, capacity, burndown, rollover, and summaries.
 - Discover work item types, states, and field reference names without scraping the web UI.
 - Print text, table, or JSON output for scripting, with stable typed schemas (`ado schema`).
@@ -193,6 +193,8 @@ ado sprint summary --iteration @current --output json
 ```sh
 ado schema --list                   # every command path with a registered output schema
 ado schema wi view                  # JSON Schema for `ado wi view --output json`
+ado schema wi attachments           # JSON Schema for attachment listing
+ado schema wi attachment-download   # JSON Schema for download results
 ado wi types --output table         # work item types defined in the project
 ado wi states "User Story"          # valid states for a work item type
 ado wi fields --type Bug            # field names + reference names for a type
@@ -298,6 +300,10 @@ ado wi link 123 --child 456 --comment "Split implementation task"
 ado wi links 123
 ado wi link-rm 123 --index 0
 ado wi attach 123 ./screenshot.png --comment "Error dialog"
+ado wi attachments 123 --output table
+ado wi attachment-download 123 0 --dir ./attachments
+ado wi attachment-download 123 report.xlsx --force
+ado wi attachment-download 123 --all --dir ./attachments
 ado wi history 123 --limit 10
 ado wi open 123
 ado wi delete 123
@@ -311,6 +317,8 @@ Useful aliases:
 - `ado wi browse` is the same as `ado wi open`.
 
 `ado wi query` runs raw WIQL against the configured project. Pass exactly one query source: `--wiql` for inline WIQL or `--file` for a saved query file. Query results are hydrated in batches of up to 200 work item IDs and printed with the same text, table, or JSON shape as `ado wi list`.
+
+`ado wi attachments` lists only file attachments from the work item's relations, including the attachment index, filename, size, UUID, comment, and raw relation index. Use `ado wi attachment-download <ID> <SELECTOR>` to download one attachment by list index, attachment UUID, or exact filename. Use `--all` to download every attachment. Downloads write to the current directory by default, `--dir` writes into a directory, `--file` writes one selected attachment to an exact path, and existing files require `--force`.
 
 ## Field Aliases
 

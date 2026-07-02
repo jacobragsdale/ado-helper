@@ -720,6 +720,20 @@ if [[ -n "$WI_ID_1" && -n "$WI_ID_2" ]]; then
   printf '%s\n' "$RUN_ID attachment" > "$TMP_DIR/attachment.txt"
   run_cmd "wi-attach-json" "$ADO_BIN" wi attach "$WI_ID_1" "$TMP_DIR/attachment.txt" --comment "$RUN_ID attachment" --output json
   assert_jq "wi-attach-has-attachment" "$(artifact_out wi-attach-json)" '(.attachment.id // "") != ""'
+  run_cmd "wi-attachments-json" "$ADO_BIN" wi attachments "$WI_ID_1" --output json
+  assert_jq "wi-attachments-has-upload" "$(artifact_out wi-attachments-json)" '.attachments | any(.name == "attachment.txt" and (.id // "") != "")'
+  DOWNLOAD_DIR="$TMP_DIR/downloads"
+  mkdir -p "$DOWNLOAD_DIR"
+  run_cmd "wi-attachment-download-index-json" "$ADO_BIN" wi attachment-download "$WI_ID_1" 0 --dir "$DOWNLOAD_DIR" --output json
+  assert_jq "wi-attachment-download-wrote-file" "$(artifact_out wi-attachment-download-index-json)" '.files | length == 1 and (.[0].path | endswith("attachment.txt"))'
+  if cmp -s "$TMP_DIR/attachment.txt" "$DOWNLOAD_DIR/attachment.txt"; then
+    ok "wi-attachment-download-bytes-match"
+  else
+    fail "wi-attachment-download-bytes-match ($DOWNLOAD_DIR/attachment.txt differs from source)"
+  fi
+  run_expect_code "wi-attachment-download-existing-fails" 3 "$ADO_BIN" wi attachment-download "$WI_ID_1" 0 --dir "$DOWNLOAD_DIR"
+  run_cmd "wi-attachment-download-force-json" "$ADO_BIN" wi attachment-download "$WI_ID_1" 0 --dir "$DOWNLOAD_DIR" --force --output json
+  assert_jq "wi-attachment-download-force-overwrote" "$(artifact_out wi-attachment-download-force-json)" '.files | length == 1 and .[0].overwritten == true'
   run_cmd "wi-history-json" "$ADO_BIN" wi history "$WI_ID_1" --limit 10 --output json
   assert_jq "wi-history-has-revisions" "$(artifact_out wi-history-json)" '.value | type == "array" and length > 0'
   run_cmd "wi-open-fake-browser" "$ADO_BIN" --quiet wi open "$WI_ID_1"

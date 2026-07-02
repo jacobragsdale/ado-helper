@@ -2,24 +2,30 @@
 
 use anyhow::{Context, Result, bail};
 use serde_json::json;
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 use crate::client::AdoClient;
 use crate::context::CmdCtx;
+use crate::error::CliError;
 use crate::output::{self, OutputFormat};
 
 const WI_LIST_HEADERS: &[&str] = &["ID", "Type", "State", "Title", "Assignee"];
+const WI_ATTACHMENT_HEADERS: &[&str] = &["Index", "Name", "Size", "ID", "Comment", "Relation"];
 
 use super::api;
 use super::args::{
-    AttachArgs, CommentArgs, CommentDeleteArgs, CommentEditArgs, CommentsArgs, CreateArgs,
-    DeleteArgs, FieldsArgs, HistoryArgs, LinkArgs, LinkRmArgs, LinksArgs, ListArgs, OpenArgs,
-    QueryArgs, StatesArgs, TypesArgs, UpdateArgs, ViewArgs, WorkItemArgs, WorkItemCommand,
+    AttachArgs, AttachmentDownloadArgs, AttachmentsArgs, CommentArgs, CommentDeleteArgs,
+    CommentEditArgs, CommentsArgs, CreateArgs, DeleteArgs, FieldsArgs, HistoryArgs, LinkArgs,
+    LinkRmArgs, LinksArgs, ListArgs, OpenArgs, QueryArgs, StatesArgs, TypesArgs, UpdateArgs,
+    ViewArgs, WorkItemArgs, WorkItemCommand,
 };
 use super::flags::build_field_ops;
 use super::helpers::{encode_path, escape_wiql, field_str, workitem_url};
 use super::types::{
-    AttachResult, AttachmentRef, FieldListResponse, PatchOp, StateListResponse, WiComment,
-    WiCommentList, WorkItem, WorkItemTypeListResponse,
+    AttachResult, AttachmentRef, FieldListResponse, PatchOp, Relation, StateListResponse,
+    WiAttachment, WiAttachmentDownloadResult, WiAttachmentDownloadedFile, WiAttachmentList,
+    WiComment, WiCommentList, WorkItem, WorkItemTypeListResponse,
 };
 
 pub async fn dispatch(args: WorkItemArgs, ctx: &CmdCtx<'_>) -> Result<()> {
@@ -40,6 +46,8 @@ pub async fn dispatch(args: WorkItemArgs, ctx: &CmdCtx<'_>) -> Result<()> {
         WorkItemCommand::Links(a) => links(a, client, output).await,
         WorkItemCommand::LinkRm(a) => link_rm(a, client, output).await,
         WorkItemCommand::Attach(a) => attach(a, client, output).await,
+        WorkItemCommand::Attachments(a) => attachments(a, client, output).await,
+        WorkItemCommand::AttachmentDownload(a) => attachment_download(a, client, output).await,
         WorkItemCommand::History(a) => history(a, client, output).await,
         WorkItemCommand::Open(a) => open(a, client, ctx.quiet).await,
         WorkItemCommand::Types(a) => types(a, client, output).await,
@@ -659,6 +667,416 @@ async fn attach(args: AttachArgs, client: &AdoClient, output: &OutputFormat) -> 
     Ok(())
 }
 
+async fn attachments(
+    args: AttachmentsArgs,
+    client: &AdoClient,
+    output: &OutputFormat,
+) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let list = fetch_attachment_list(client, project, args.id).await?;
+    print_attachments(&list, output)
+}
+
+async fn attachment_download(
+    args: AttachmentDownloadArgs,
+    client: &AdoClient,
+    output: &OutputFormat,
+) -> Result<()> {
+    let project = args.project.as_deref().unwrap_or(&client.project);
+    let list = fetch_attachment_list(client, project, args.id).await?;
+    let selected = selected_attachments(&list, &args)?;
+    let targets = plan_download_targets(&args, &selected)?;
+    let mut files = Vec::with_capacity(targets.len());
+
+    for (attachment, path, overwritten) in targets {
+        if attachment.id.is_empty() {
+            return Err(validation_error(format!(
+                "attachment [{}] {} does not include an attachment id",
+                attachment.index, attachment.name
+            )));
+        }
+        let api_path = attachment_download_path(project, &attachment);
+        let bytes = client
+            .get_bytes(&api_path)
+            .await
+            .with_context(|| format!("downloading attachment {}", attachment.name))?;
+        std::fs::write(&path, &bytes).with_context(|| format!("writing {}", path.display()))?;
+        files.push(WiAttachmentDownloadedFile {
+            attachment,
+            path: path.display().to_string(),
+            bytes: bytes.len() as u64,
+            overwritten,
+        });
+    }
+
+    let result = WiAttachmentDownloadResult {
+        work_item_id: list.work_item_id,
+        files,
+    };
+    print_attachment_download_result(&result, output)
+}
+
+async fn fetch_attachment_list(
+    client: &AdoClient,
+    project: &str,
+    id: u32,
+) -> Result<WiAttachmentList> {
+    let path = format!(
+        "{project}/_apis/wit/workitems/{id}?$expand=relations&api-version=7.1",
+        project = encode_path(project)
+    );
+    let wi: WorkItem = client.get_json(&path).await?;
+    let attachments = attachments_from_relations(&wi.relations);
+    Ok(WiAttachmentList {
+        work_item_id: id,
+        count: attachments.len(),
+        attachments,
+    })
+}
+
+fn attachments_from_relations(relations: &[Relation]) -> Vec<WiAttachment> {
+    let mut attachments = Vec::new();
+    for (relation_index, relation) in relations.iter().enumerate() {
+        if relation.rel != "AttachedFile" {
+            continue;
+        }
+        let index = attachments.len();
+        let name = relation_attr_string(&relation.attributes, "name")
+            .or_else(|| attachment_file_name_from_url(&relation.url))
+            .unwrap_or_else(|| format!("attachment-{index}"));
+        attachments.push(WiAttachment {
+            index,
+            relation_index,
+            id: attachment_id_from_url(&relation.url).unwrap_or_default(),
+            name,
+            url: relation.url.clone(),
+            size: relation
+                .attributes
+                .get("resourceSize")
+                .and_then(|value| value.as_u64()),
+            comment: relation_attr_string(&relation.attributes, "comment"),
+            created_date: relation_attr_string(&relation.attributes, "resourceCreatedDate"),
+            modified_date: relation_attr_string(&relation.attributes, "resourceModifiedDate"),
+        });
+    }
+    attachments
+}
+
+fn relation_attr_string(attributes: &serde_json::Value, key: &str) -> Option<String> {
+    attributes
+        .get(key)
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(String::from)
+}
+
+fn attachment_id_from_url(url: &str) -> Option<String> {
+    let marker = "/attachments/";
+    let start = url.find(marker)? + marker.len();
+    let id = url[start..]
+        .split(['?', '/', '#'])
+        .next()
+        .filter(|id| !id.is_empty())?;
+    Some(id.to_string())
+}
+
+fn attachment_file_name_from_url(url: &str) -> Option<String> {
+    let query = url.split_once('?')?.1;
+    for part in query.split('&') {
+        let Some((key, value)) = part.split_once('=') else {
+            continue;
+        };
+        if key.eq_ignore_ascii_case("fileName") && !value.is_empty() {
+            return Some(percent_decode_query_component(value));
+        }
+    }
+    None
+}
+
+fn percent_decode_query_component(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (hex_value(bytes[i + 1]), hex_value(bytes[i + 2])) {
+                decoded.push((hi << 4) | lo);
+                i += 3;
+                continue;
+            }
+        }
+        if bytes[i] == b'+' {
+            decoded.push(b' ');
+        } else {
+            decoded.push(bytes[i]);
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn selected_attachments(
+    list: &WiAttachmentList,
+    args: &AttachmentDownloadArgs,
+) -> Result<Vec<WiAttachment>> {
+    if args.all {
+        return Ok(list.attachments.clone());
+    }
+    let selector = args
+        .selector
+        .as_deref()
+        .ok_or_else(|| validation_error("expected SELECTOR or --all"))?;
+    let attachment = resolve_attachment_selector(&list.attachments, selector, list.work_item_id)?;
+    Ok(vec![attachment.clone()])
+}
+
+fn resolve_attachment_selector<'a>(
+    attachments: &'a [WiAttachment],
+    selector: &str,
+    work_item_id: u32,
+) -> Result<&'a WiAttachment> {
+    if let Ok(index) = selector.parse::<usize>() {
+        if let Some(attachment) = attachments
+            .iter()
+            .find(|attachment| attachment.index == index)
+        {
+            return Ok(attachment);
+        }
+    }
+
+    if let Some(attachment) = attachments
+        .iter()
+        .find(|attachment| attachment.id.eq_ignore_ascii_case(selector))
+    {
+        return Ok(attachment);
+    }
+
+    let matches: Vec<&WiAttachment> = attachments
+        .iter()
+        .filter(|attachment| attachment.name == selector)
+        .collect();
+    match matches.as_slice() {
+        [attachment] => Ok(*attachment),
+        [] => Err(validation_error(format!(
+            "attachment selector `{selector}` not found on #{work_item_id}"
+        ))),
+        _ => Err(validation_error(format!(
+            "multiple attachments named `{selector}` on #{work_item_id}; use attachment index or id"
+        ))),
+    }
+}
+
+fn plan_download_targets(
+    args: &AttachmentDownloadArgs,
+    attachments: &[WiAttachment],
+) -> Result<Vec<(WiAttachment, PathBuf, bool)>> {
+    let mut targets: Vec<(WiAttachment, PathBuf)> = attachments
+        .iter()
+        .cloned()
+        .map(|attachment| {
+            let path = target_path_for_attachment(args, &attachment);
+            (attachment, path)
+        })
+        .collect();
+
+    ensure_unique_targets(&targets)?;
+    create_target_directories(args, &targets)?;
+
+    let mut planned = Vec::with_capacity(targets.len());
+    for (attachment, path) in targets.drain(..) {
+        let overwritten = path.exists();
+        if overwritten && !args.force {
+            return Err(validation_error(format!(
+                "{} already exists; pass --force to overwrite",
+                path.display()
+            )));
+        }
+        planned.push((attachment, path, overwritten));
+    }
+    Ok(planned)
+}
+
+fn target_path_for_attachment(args: &AttachmentDownloadArgs, attachment: &WiAttachment) -> PathBuf {
+    if let Some(file) = args.file.as_ref() {
+        return file.clone();
+    }
+    let dir = args.dir.clone().unwrap_or_else(|| PathBuf::from("."));
+    dir.join(output_file_name(attachment))
+}
+
+fn output_file_name(attachment: &WiAttachment) -> String {
+    let name = attachment.name.rsplit(['/', '\\']).next().unwrap_or("");
+    if name.is_empty() {
+        format!("attachment-{}", attachment.index)
+    } else {
+        name.to_string()
+    }
+}
+
+fn ensure_unique_targets(targets: &[(WiAttachment, PathBuf)]) -> Result<()> {
+    let mut seen = HashSet::new();
+    for (_, path) in targets {
+        if !seen.insert(path.clone()) {
+            return Err(validation_error(format!(
+                "multiple attachments would write to {}; download individually with --file",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn create_target_directories(
+    args: &AttachmentDownloadArgs,
+    targets: &[(WiAttachment, PathBuf)],
+) -> Result<()> {
+    if let Some(dir) = args.dir.as_ref() {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        return Ok(());
+    }
+    if args.file.is_some() {
+        for (_, path) in targets {
+            if let Some(parent) = path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+            {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("creating {}", parent.display()))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn attachment_download_path(project: &str, attachment: &WiAttachment) -> String {
+    format!(
+        "{project}/_apis/wit/attachments/{id}?fileName={name}&download=true&api-version=7.1",
+        project = encode_path(project),
+        id = encode_path(&attachment.id),
+        name = encode_path(&attachment.name)
+    )
+}
+
+fn print_attachments(list: &WiAttachmentList, output: &OutputFormat) -> Result<()> {
+    match output {
+        OutputFormat::Json => output::print_json(list)?,
+        OutputFormat::Text => {
+            if list.attachments.is_empty() {
+                println!("(no attachments on #{})", list.work_item_id);
+                return Ok(());
+            }
+            for attachment in &list.attachments {
+                let size = attachment
+                    .size
+                    .map(|size| format!("{size} bytes"))
+                    .unwrap_or_else(|| "? bytes".to_string());
+                let comment = attachment
+                    .comment
+                    .as_deref()
+                    .map(|comment| format!("  // {comment}"))
+                    .unwrap_or_default();
+                println!(
+                    "[{}] {}  {}  id {}  relation [{}]{}",
+                    attachment.index,
+                    attachment.name,
+                    size,
+                    attachment.id,
+                    attachment.relation_index,
+                    comment
+                );
+            }
+        }
+        OutputFormat::Table => {
+            if list.attachments.is_empty() {
+                println!("(no attachments on #{})", list.work_item_id);
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = list
+                .attachments
+                .iter()
+                .map(|attachment| {
+                    vec![
+                        attachment.index.to_string(),
+                        attachment.name.clone(),
+                        attachment
+                            .size
+                            .map(|size| size.to_string())
+                            .unwrap_or_else(|| "?".to_string()),
+                        attachment.id.clone(),
+                        attachment.comment.clone().unwrap_or_default(),
+                        attachment.relation_index.to_string(),
+                    ]
+                })
+                .collect();
+            output::print_table(WI_ATTACHMENT_HEADERS, &rows);
+        }
+    }
+    Ok(())
+}
+
+fn print_attachment_download_result(
+    result: &WiAttachmentDownloadResult,
+    output: &OutputFormat,
+) -> Result<()> {
+    match output {
+        OutputFormat::Json => output::print_json(result)?,
+        OutputFormat::Text => {
+            if result.files.is_empty() {
+                println!("(no attachments on #{})", result.work_item_id);
+                return Ok(());
+            }
+            for file in &result.files {
+                let action = if file.overwritten {
+                    "Overwrote"
+                } else {
+                    "Downloaded"
+                };
+                println!(
+                    "{action} {} to {} ({} bytes)",
+                    file.attachment.name, file.path, file.bytes
+                );
+            }
+        }
+        OutputFormat::Table => {
+            if result.files.is_empty() {
+                println!("(no attachments on #{})", result.work_item_id);
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = result
+                .files
+                .iter()
+                .map(|file| {
+                    vec![
+                        file.attachment.name.clone(),
+                        file.path.clone(),
+                        file.bytes.to_string(),
+                        if file.overwritten {
+                            "yes".into()
+                        } else {
+                            "".into()
+                        },
+                    ]
+                })
+                .collect();
+            output::print_table(&["Name", "Path", "Bytes", "Overwritten"], &rows);
+        }
+    }
+    Ok(())
+}
+
+fn validation_error(message: impl Into<String>) -> anyhow::Error {
+    CliError::Validation(message.into()).into()
+}
+
 // ── history ─────────────────────────────────────────────────────────────────
 
 async fn history(args: HistoryArgs, client: &AdoClient, output: &OutputFormat) -> Result<()> {
@@ -893,4 +1311,158 @@ async fn open(args: OpenArgs, client: &AdoClient, quiet: bool) -> Result<()> {
         &format!("Opening work item #{} in browser...", args.id),
     );
     AdoClient::open_in_browser(&url)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn attachment(index: usize, id: &str, name: &str) -> WiAttachment {
+        WiAttachment {
+            index,
+            relation_index: index + 10,
+            id: id.to_string(),
+            name: name.to_string(),
+            url: format!("https://dev.azure.com/org/_apis/wit/attachments/{id}"),
+            size: None,
+            comment: None,
+            created_date: None,
+            modified_date: None,
+        }
+    }
+
+    fn download_args(dir: Option<PathBuf>, force: bool) -> AttachmentDownloadArgs {
+        AttachmentDownloadArgs {
+            id: 123,
+            selector: Some("0".into()),
+            all: false,
+            dir,
+            file: None,
+            force,
+            project: None,
+        }
+    }
+
+    fn unique_test_dir(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time before epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("ado-helper-{name}-{}-{nanos}", std::process::id()))
+    }
+
+    #[test]
+    fn extracts_attached_file_relations() {
+        let relations = vec![
+            Relation {
+                rel: "System.LinkTypes.Related".into(),
+                url: "https://dev.azure.com/org/_apis/wit/workItems/456".into(),
+                attributes: json!({}),
+            },
+            Relation {
+                rel: "AttachedFile".into(),
+                url: "https://dev.azure.com/org/_apis/wit/attachments/55942c02-4fe2-41e9-8bfd-559e2e244c36?fileName=ignored.txt".into(),
+                attributes: json!({
+                    "name": "report.xlsx",
+                    "resourceSize": 42,
+                    "comment": "source workbook",
+                    "resourceCreatedDate": "2026-05-24T12:00:00Z",
+                    "resourceModifiedDate": "2026-05-24T12:01:00Z"
+                }),
+            },
+        ];
+
+        let attachments = attachments_from_relations(&relations);
+
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].index, 0);
+        assert_eq!(attachments[0].relation_index, 1);
+        assert_eq!(attachments[0].id, "55942c02-4fe2-41e9-8bfd-559e2e244c36");
+        assert_eq!(attachments[0].name, "report.xlsx");
+        assert_eq!(attachments[0].size, Some(42));
+        assert_eq!(attachments[0].comment.as_deref(), Some("source workbook"));
+        assert_eq!(
+            attachments[0].created_date.as_deref(),
+            Some("2026-05-24T12:00:00Z")
+        );
+    }
+
+    #[test]
+    fn selector_resolves_by_index_id_or_exact_name() {
+        let attachments = vec![
+            attachment(0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "first.xlsx"),
+            attachment(1, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "second.xlsx"),
+        ];
+
+        assert_eq!(
+            resolve_attachment_selector(&attachments, "1", 123)
+                .unwrap()
+                .name,
+            "second.xlsx"
+        );
+        assert_eq!(
+            resolve_attachment_selector(&attachments, "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB", 123)
+                .unwrap()
+                .name,
+            "second.xlsx"
+        );
+        assert_eq!(
+            resolve_attachment_selector(&attachments, "first.xlsx", 123)
+                .unwrap()
+                .id,
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        );
+    }
+
+    #[test]
+    fn duplicate_filename_selector_is_validation_error() {
+        let attachments = vec![
+            attachment(0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "report.xlsx"),
+            attachment(1, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "report.xlsx"),
+        ];
+
+        let err = resolve_attachment_selector(&attachments, "report.xlsx", 123).unwrap_err();
+
+        assert!(err.downcast_ref::<CliError>().is_some());
+    }
+
+    #[test]
+    fn existing_target_requires_force() {
+        let dir = unique_test_dir("existing-target");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("report.xlsx");
+        std::fs::write(&path, b"old").expect("seed existing file");
+        let attachments = vec![attachment(
+            0,
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "report.xlsx",
+        )];
+
+        let err = plan_download_targets(&download_args(Some(dir.clone()), false), &attachments)
+            .unwrap_err();
+        assert!(err.downcast_ref::<CliError>().is_some());
+
+        let planned =
+            plan_download_targets(&download_args(Some(dir.clone()), true), &attachments).unwrap();
+        assert!(planned[0].2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn duplicate_targets_are_rejected_for_all_downloads() {
+        let dir = unique_test_dir("duplicate-targets");
+        let mut args = download_args(Some(dir.clone()), true);
+        args.selector = None;
+        args.all = true;
+        let attachments = vec![
+            attachment(0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "report.xlsx"),
+            attachment(1, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "report.xlsx"),
+        ];
+
+        let err = plan_download_targets(&args, &attachments).unwrap_err();
+
+        assert!(err.downcast_ref::<CliError>().is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

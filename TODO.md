@@ -160,3 +160,11 @@ Quality-of-life that makes the CLI safer to drive from an LLM.
 
 - [x] Schema docs command
   - `ado schema <command>` prints the JSON output schema for that command. Lets agents introspect without scraping the README.
+
+# Deferred Skills (revisit after foundation is stable)
+
+These skills were removed on 2026-05-24 to focus the starting set on the ticket → refine → developer loop. Original specs are recoverable from git history.
+
+- [ ] **Re-introduce `ado-qa-test-plan-workflow` skill.** Sprint-level QA test plan generator from QA Testing tasks (read-only ADO; outputs local markdown). Spec previously at `.agents/skills/ado-qa-test-plan-workflow/SKILL.md` and `qa-test-plan-workflow.md`.
+- [ ] **Re-introduce `ado-product-update-workflow` skill.** Read-only sprint → stakeholder markdown generator. Spec previously at `.agents/skills/ado-product-update-workflow/SKILL.md` and `product-update-workflow.md`.
+- [ ] **Sprint-management skill family** — planning (capacity-aware), standup digest, monitoring (aging/blocked), retrospective. Build after the foundation skills (`ado-ticket-workflow`, `ado-refine-ticket`, `ado-developer-workflow`) are settled. See `ideas.md` for the full menu.

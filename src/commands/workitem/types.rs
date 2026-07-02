@@ -94,6 +94,63 @@ pub struct AttachResult {
     pub work_item: WorkItem,
 }
 
+/// One attachment relation on a work item, normalized for listing and downloads.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct WiAttachment {
+    /// Attachment-only index shown by `ado wi attachments`.
+    pub index: usize,
+    /// Raw relation index, useful with `ado wi link-rm`.
+    #[serde(rename = "relationIndex")]
+    pub relation_index: usize,
+    /// Attachment UUID from the WIT attachment URL.
+    pub id: String,
+    /// Original attachment filename.
+    pub name: String,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    #[serde(
+        default,
+        rename = "createdDate",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub created_date: Option<String>,
+    #[serde(
+        default,
+        rename = "modifiedDate",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub modified_date: Option<String>,
+}
+
+/// Envelope returned by `ado wi attachments`.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct WiAttachmentList {
+    #[serde(rename = "workItemId")]
+    pub work_item_id: u32,
+    pub count: usize,
+    pub attachments: Vec<WiAttachment>,
+}
+
+/// One file written by `ado wi attachment-download`.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct WiAttachmentDownloadedFile {
+    pub attachment: WiAttachment,
+    pub path: String,
+    pub bytes: u64,
+    pub overwritten: bool,
+}
+
+/// Envelope returned by `ado wi attachment-download`.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct WiAttachmentDownloadResult {
+    #[serde(rename = "workItemId")]
+    pub work_item_id: u32,
+    pub files: Vec<WiAttachmentDownloadedFile>,
+}
+
 /// One revision in a work item's history.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct WiRevision {

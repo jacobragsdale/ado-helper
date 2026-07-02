@@ -143,6 +143,19 @@ impl AdoClient {
             .context("failed to parse JSON response")
     }
 
+    /// GET an authenticated binary response from an ADO REST path.
+    pub async fn get_bytes(&self, path: &str) -> Result<Vec<u8>> {
+        let resp = self
+            .get(path)
+            .header("Accept", "application/octet-stream")
+            .send()
+            .await
+            .context("GET request failed")?;
+        let resp = Self::check_response(resp).await?;
+        let bytes = resp.bytes().await.context("failed to read byte response")?;
+        Ok(bytes.to_vec())
+    }
+
     /// GET an absolute URL and return its text body. Used for ADO signed log
     /// URLs, which are already authorized by their query string.
     pub async fn get_absolute_text(&self, url: &str) -> Result<String> {

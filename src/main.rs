@@ -113,7 +113,7 @@ enum Commands {
     /// Manage work items (alias: wi)
     #[command(
         visible_alias = "wi",
-        after_help = "Examples:\n  ado wi create --title \"Fix login redirect\" --type Bug --assigned-to me\n  ado wi list --assigned-to me --state Active\n  ado wi query --wiql \"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project\"\n  ado wi update 123 --state Closed --field priority=2\n  ado wi link 123 --child 456\n  ado wi attach 123 ./screenshot.png\n\nUse field aliases like title, state, assigned-to, tags, priority, story-points, and acceptance-criteria with --field."
+        after_help = "Examples:\n  ado wi create --title \"Fix login redirect\" --type Bug --assigned-to me\n  ado wi list --assigned-to me --state Active\n  ado wi query --wiql \"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project\"\n  ado wi update 123 --state Closed --field priority=2\n  ado wi link 123 --child 456\n  ado wi attach 123 ./screenshot.png\n  ado wi attachments 123\n  ado wi attachment-download 123 report.xlsx\n\nUse field aliases like title, state, assigned-to, tags, priority, story-points, and acceptance-criteria with --field."
     )]
     WorkItem(workitem::WorkItemArgs),
 

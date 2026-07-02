@@ -7,7 +7,7 @@ use super::flags::FieldFlags;
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  ado wi create --title \"Fix login redirect\" --type Bug --assigned-to me\n  ado wi list --assigned-to me --state Active\n  ado wi query --wiql \"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project\"\n  ado wi view 123\n  ado wi update 123 --state Closed --field priority=2\n  ado wi link 123 --child 456\n  ado wi attach 123 ./screenshot.png\n\nWork item field aliases include title, state, assigned-to, tags, priority, severity, story-points, acceptance-criteria, repro-steps, and remaining-work."
+    after_help = "Examples:\n  ado wi create --title \"Fix login redirect\" --type Bug --assigned-to me\n  ado wi list --assigned-to me --state Active\n  ado wi query --wiql \"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project\"\n  ado wi view 123\n  ado wi update 123 --state Closed --field priority=2\n  ado wi link 123 --child 456\n  ado wi attach 123 ./screenshot.png\n  ado wi attachments 123\n  ado wi attachment-download 123 report.xlsx\n\nWork item field aliases include title, state, assigned-to, tags, priority, severity, story-points, acceptance-criteria, repro-steps, and remaining-work."
 )]
 pub struct WorkItemArgs {
     #[command(subcommand)]
@@ -84,6 +84,18 @@ pub enum WorkItemCommand {
         after_help = "Examples:\n  ado wi attach 123 ./screenshot.png\n  ado wi attach 123 ./log.txt --comment \"Failure log from staging\""
     )]
     Attach(AttachArgs),
+
+    /// List attachments on a work item
+    #[command(
+        after_help = "Examples:\n  ado wi attachments 123\n  ado wi attachments 123 --output json"
+    )]
+    Attachments(AttachmentsArgs),
+
+    /// Download one or all attachments from a work item
+    #[command(
+        after_help = "Examples:\n  ado wi attachment-download 123 0\n  ado wi attachment-download 123 report.xlsx --dir ./downloads\n  ado wi attachment-download 123 55942c02-4fe2-41e9-8bfd-559e2e244c36 --file ./report.xlsx\n  ado wi attachment-download 123 --all --dir ./attachments\n\nSELECTOR may be the attachment index from `wi attachments`, attachment UUID, or exact filename."
+    )]
+    AttachmentDownload(AttachmentDownloadArgs),
 
     /// Show revision history of a work item
     History(HistoryArgs),
@@ -330,6 +342,49 @@ pub struct AttachArgs {
     /// Optional comment shown with the attachment
     #[arg(long, value_name = "TEXT")]
     pub comment: Option<String>,
+}
+
+#[derive(Args)]
+pub struct AttachmentsArgs {
+    /// Work item ID
+    #[arg(value_name = "ID")]
+    pub id: u32,
+
+    /// Project (defaults to configured project)
+    #[arg(long, value_name = "PROJECT")]
+    pub project: Option<String>,
+}
+
+#[derive(Args)]
+#[command(group(clap::ArgGroup::new("selection").required(true).multiple(false).args(["selector", "all"])))]
+pub struct AttachmentDownloadArgs {
+    /// Work item ID
+    #[arg(value_name = "ID")]
+    pub id: u32,
+
+    /// Attachment index, UUID, or exact filename
+    #[arg(value_name = "SELECTOR")]
+    pub selector: Option<String>,
+
+    /// Download every attachment on the work item
+    #[arg(long, conflicts_with = "file")]
+    pub all: bool,
+
+    /// Directory to write into (default: current directory)
+    #[arg(long, value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
+    pub dir: Option<PathBuf>,
+
+    /// Exact output path for one selected attachment
+    #[arg(long, value_name = "PATH", value_hint = clap::ValueHint::FilePath, conflicts_with_all = ["all", "dir"])]
+    pub file: Option<PathBuf>,
+
+    /// Replace existing local files
+    #[arg(long)]
+    pub force: bool,
+
+    /// Project (defaults to configured project)
+    #[arg(long, value_name = "PROJECT")]
+    pub project: Option<String>,
 }
 
 #[derive(Args)]
